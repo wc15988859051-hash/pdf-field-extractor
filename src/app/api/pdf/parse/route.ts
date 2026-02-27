@@ -1,8 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as pdfjs from 'pdfjs-dist';
-
-// 设置worker路径
-pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // 字段映射关系
 const FIELD_MAPPING = {
@@ -120,6 +116,13 @@ function extractFieldsWithBackup(text: string): Record<string, string> {
 
 // 提取PDF文本内容
 async function extractPDFText(buffer: Buffer): Promise<string> {
+  // 动态导入pdfjs-dist，避免worker配置问题
+  const pdfjs = await import('pdfjs-dist');
+  
+  // 在运行时设置worker
+  const version = '5.4.624'; // 使用已安装的版本
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
+  
   // 加载PDF文档
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(buffer),
