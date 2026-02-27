@@ -124,18 +124,26 @@ export default function PDFExtractorPage() {
       console.log(`文件 ${file.name} 的响应状态:`, response.status, response.statusText);
       console.log(`响应类型:`, response.headers.get('content-type'));
 
+      // 先读取响应文本（只能读取一次）
+      let responseText;
+      try {
+        responseText = await response.text();
+        console.log(`文件 ${file.name} 的响应内容:`, responseText);
+      } catch (textError) {
+        console.error('读取响应内容失败:', textError);
+        throw new Error('无法读取服务器响应');
+      }
+
       // 检查响应是否成功
       if (!response.ok) {
-        // 尝试读取错误信息
-        let errorMessage = '解析失败';
+        // 尝试从文本中解析错误信息
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         try {
-          const errorData = await response.json();
+          const errorData = JSON.parse(responseText);
           errorMessage = errorData.error || errorMessage;
         } catch (jsonError) {
-          // 如果无法解析 JSON，尝试读取文本
-          const errorText = await response.text();
-          console.error('错误响应内容:', errorText);
-          errorMessage = `HTTP ${response.status}: ${errorText.substring(0, 200)}`;
+          // 如果无法解析 JSON，使用原始文本（截断以避免太长）
+          errorMessage = `HTTP ${response.status}: ${responseText.substring(0, 200)}`;
         }
         throw new Error(errorMessage);
       }
@@ -143,11 +151,9 @@ export default function PDFExtractorPage() {
       // 解析成功的响应
       let result;
       try {
-        result = await response.json();
-        console.log(`文件 ${file.name} 的解析结果:`, result);
+        result = JSON.parse(responseText);
       } catch (jsonError) {
         console.error('JSON 解析失败:', jsonError);
-        const responseText = await response.text();
         console.error('响应内容:', responseText);
         throw new Error('服务器返回了无效的响应格式');
       }
