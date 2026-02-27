@@ -31,7 +31,7 @@ const REQUIRED_FIELDS = [
 
 // 解析 PDF 并提取文本
 async function parsePDF(filePath: string): Promise<string> {
-  const scriptPath = join(PROJECT_ROOT, 'scripts', 'parse_pdf.py');
+  const scriptPath = join(PROJECT_ROOT, 'public', 'scripts', 'parse_pdf.py');
   const { stdout, stderr } = await execAsync(`python3 "${scriptPath}" "${filePath}"`);
 
   if (stderr && !stdout) {
@@ -142,7 +142,7 @@ ${pdfText}`;
 async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
   const extractedDir = '/tmp/extracted';
   const jsonDataPath = join(extractedDir, `temp_${pdfFilename}_${Date.now()}.json`);
-  const templatePath = join(PROJECT_ROOT, 'assets', 'template.xlsx');
+  const templatePath = join(PROJECT_ROOT, 'public', 'assets', 'template.xlsx');
 
   // 确保导出目录存在
   if (!existsSync(extractedDir)) {
@@ -159,7 +159,7 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
   await writeFile(jsonDataPath, JSON.stringify(dataWithFilename, null, 2), 'utf-8');
 
   // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
-  const scriptPath = join(PROJECT_ROOT, 'scripts', 'export_to_excel.py');
+  const scriptPath = join(PROJECT_ROOT, 'public', 'scripts', 'export_to_excel.py');
   const { stdout, stderr } = await execAsync(
     `python3 "${scriptPath}" "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
   );
