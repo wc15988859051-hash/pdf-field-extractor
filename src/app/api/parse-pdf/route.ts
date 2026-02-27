@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, unlink, readFile, access } from 'fs/promises';
+import { writeFile, unlink, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+
+// 全局 Excel 文件路径
+const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
 // 需要提取的字段列表
 const REQUIRED_FIELDS = [
@@ -65,11 +68,10 @@ async function extractFieldsWithLLM(pdfText: string): Promise<any> {
   return fields;
 }
 
-// 导出 Excel
+// 导出 Excel（追加到全局 Excel 文件）
 async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
-  const jsonDataPath = join('/tmp/extracted', `${pdfFilename}.json`);
+  const jsonDataPath = join('/tmp/extracted', `temp_${pdfFilename}_${Date.now()}.json`);
   const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
-  const excelOutputPath = join('/tmp/extracted', `${pdfFilename}.xlsx`);
 
   // 确保 PDF 文件名在数据中
   const dataWithFilename = data.map(item => ({
@@ -77,26 +79,27 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
     "原PDF名称": pdfFilename
   }));
 
-  // 写入 JSON 文件
+  // 写入临时 JSON 文件
   await writeFile(jsonDataPath, JSON.stringify(dataWithFilename, null, 2), 'utf-8');
 
-  // 调用导出脚本
+  // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
   const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/export_to_excel.py';
   const { stdout, stderr } = await execAsync(
-    `python3 ${scriptPath} "${jsonDataPath}" "${templatePath}" "${excelOutputPath}"`
+    `python3 ${scriptPath} "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
   );
 
   if (stderr && !stdout) {
     throw new Error(`Excel 导出失败: ${stderr}`);
   }
 
-  return excelOutputPath;
-}
+  // 清理临时 JSON 文件
+  try {
+    await unlink(jsonDataPath);
+  } catch (error) {
+    console.error('清理临时 JSON 文件失败:', error);
+  }
 
-// 读取 Excel 文件并转换为 Base64（用于下载）
-async function readExcelAsBase64(filePath: string): Promise<string> {
-  const buffer = await readFile(filePath);
-  return buffer.toString('base64');
+  return GLOBAL_EXCEL_PATH;
 }
 
 export async function POST(request: NextRequest) {
@@ -126,11 +129,8 @@ export async function POST(request: NextRequest) {
     // 步骤 2: 提取字段（简化版本，实际应使用 LLM）
     const extractedFields = await extractFieldsWithLLM(pdfText);
 
-    // 步骤 3: 导出 Excel
-    const excelPath = await exportToExcel([extractedFields], filename);
-
-    // 步骤 4: 读取 Excel 文件为 Base64
-    const excelBase64 = await readExcelAsBase64(excelPath);
+    // 步骤 3: 导出 Excel（追加到全局 Excel 文件）
+    await exportToExcel([extractedFields], filename);
 
     // 清理临时 PDF 文件
     try {
@@ -143,9 +143,7 @@ export async function POST(request: NextRequest) {
       success: true,
       filename: filename,
       fields: extractedFields,
-      excelData: excelBase64,
-      excelFilename: `${filename}.xlsx`,
-      message: 'PDF 解析成功，字段已提取并生成 Excel 文件'
+      message: 'PDF 解析成功，字段已提取并追加到全局 Excel 文件'
     });
 
   } catch (error) {

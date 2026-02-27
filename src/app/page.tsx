@@ -21,8 +21,6 @@ interface PDFFile {
   extractedFields: ExtractedField[];
   status: 'pending' | 'processing' | 'completed' | 'error';
   errorMessage?: string;
-  excelData?: string;  // Excel 文件的 Base64 数据
-  excelFilename?: string;  // Excel 文件名
 }
 
 // 默认字段映射（后续可由用户配置）
@@ -116,8 +114,6 @@ export default function PDFExtractorPage() {
               ...f,
               status: 'completed' as const,
               extractedFields,
-              excelData: result.excelData,
-              excelFilename: result.excelFilename,
             };
           }
           return f;
@@ -182,31 +178,27 @@ export default function PDFExtractorPage() {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  // 下载 Excel 文件
-  const downloadExcel = (file: PDFFile) => {
-    if (!file.excelData || !file.excelFilename) {
-      return;
+  // 下载全局 Excel 文件
+  const downloadGlobalExcel = async () => {
+    try {
+      const response = await fetch('/api/export-excel');
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '下载失败');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `all_data_${Date.now()}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('下载 Excel 失败:', error);
+      alert('下载 Excel 失败: ' + (error instanceof Error ? error.message : String(error)));
     }
-
-    const byteCharacters = atob(file.excelData);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = file.excelFilename;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // 导出所有结果为 Excel（合并功能，暂时禁用）
-  const handleExportAll = () => {
-    alert('此功能暂未实现。请单独下载每个 PDF 对应的 Excel 文件。');
   };
 
   return (
@@ -215,10 +207,10 @@ export default function PDFExtractorPage() {
         {/* 标题区域 */}
         <div className="text-center space-y-2">
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
-            PDF 文件解析与字段提取
+            PDF 字段提取与 Excel 合并
           </h1>
           <p className="text-muted-foreground text-sm md:text-base">
-            上传PDF文件，自动提取并映射字段内容
+            上传PDF文件，自动提取业务字段并合并到同一个 Excel 表格
           </p>
         </div>
 
@@ -230,7 +222,7 @@ export default function PDFExtractorPage() {
               上传PDF文件
             </CardTitle>
             <CardDescription>
-              支持单个或多个PDF文件上传，相同名称的文件将覆盖原有内容
+              支持单个或多个PDF文件上传，所有数据将自动合并到同一个 Excel 表格中
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -275,17 +267,17 @@ export default function PDFExtractorPage() {
                     已上传文件
                   </CardTitle>
                   <CardDescription>
-                    共 {pdfFiles.length} 个文件
+                    共 {pdfFiles.length} 个文件 · 所有数据已合并到全局 Excel 文件
                   </CardDescription>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleExportAll}
+                  onClick={downloadGlobalExcel}
                   disabled={!pdfFiles.some(f => f.status === 'completed')}
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  导出全部
+                  下载全局 Excel
                 </Button>
               </div>
             </CardHeader>
@@ -315,16 +307,6 @@ export default function PDFExtractorPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {file.status === 'completed' && file.excelData && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => downloadExcel(file)}
-                          >
-                            <Download className="h-4 w-4 mr-2" />
-                            下载 Excel
-                          </Button>
-                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -382,7 +364,7 @@ export default function PDFExtractorPage() {
                   还没有上传任何文件
                 </p>
                 <p className="text-xs mt-2">
-                  上传PDF文件后，系统将自动提取字段并生成 Excel 文件
+                  上传PDF文件后，系统将自动提取字段并合并到全局 Excel 文件
                 </p>
               </div>
             </CardContent>
