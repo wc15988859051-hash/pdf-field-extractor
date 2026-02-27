@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Upload, FileText, Trash2, Download, RefreshCw } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Upload, FileText, Trash2, Download, RefreshCw, History, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 interface ExtractedField {
   fieldName: string;
@@ -23,12 +24,39 @@ interface PDFFile {
   errorMessage?: string;
 }
 
+interface HistoryRecord {
+  filename: string;
+  uploadTime: string;
+  status: 'completed' | 'error';
+}
+
 // 默认字段映射（后续可由用户配置）
 const DEFAULT_FIELDS = ['文档标题', '文档作者', '创建日期', '页数'];
 
 export default function PDFExtractorPage() {
   const [pdfFiles, setPdfFiles] = useState<PDFFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // 从 localStorage 加载历史记录
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('pdfUploadHistory');
+    if (savedHistory) {
+      try {
+        setHistory(JSON.parse(savedHistory));
+      } catch (error) {
+        console.error('加载历史记录失败:', error);
+      }
+    }
+  }, []);
+
+  // 保存历史记录到 localStorage
+  const saveHistory = (newRecord: HistoryRecord) => {
+    const updatedHistory = [newRecord, ...history].slice(0, 50); // 只保留最近 50 条
+    setHistory(updatedHistory);
+    localStorage.setItem('pdfUploadHistory', JSON.stringify(updatedHistory));
+  };
 
   // 处理文件上传
   const handleFileUpload = useCallback(async (files: FileList | null) => {
@@ -119,6 +147,13 @@ export default function PDFExtractorPage() {
           return f;
         })
       );
+
+      // 添加到历史记录
+      saveHistory({
+        filename: file.name,
+        uploadTime: new Date().toISOString(),
+        status: 'completed',
+      });
     } catch (error) {
       console.error(`处理文件 ${file.name} 失败:`, error);
       setPdfFiles(prev =>
@@ -133,6 +168,13 @@ export default function PDFExtractorPage() {
           return f;
         })
       );
+
+      // 添加失败记录到历史记录
+      saveHistory({
+        filename: file.name,
+        uploadTime: new Date().toISOString(),
+        status: 'error',
+      });
     }
   };
 
@@ -270,15 +312,69 @@ export default function PDFExtractorPage() {
                     共 {pdfFiles.length} 个文件 · 所有数据已合并到全局 Excel 文件
                   </CardDescription>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={downloadGlobalExcel}
-                  disabled={!pdfFiles.some(f => f.status === 'completed')}
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  下载全局 Excel
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadGlobalExcel}
+                    disabled={!pdfFiles.every(f => f.status === 'completed')}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    下载全局 Excel
+                  </Button>
+                  <Dialog open={showHistory} onOpenChange={setShowHistory}>
+                    <DialogTrigger asChild>
+                      <Button variant="ghost" size="sm">
+                        <History className="h-4 w-4 mr-2" />
+                        历史记录
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <History className="h-5 w-5" />
+                          上传历史记录
+                        </DialogTitle>
+                        <DialogDescription>
+                          查看所有已上传的 PDF 文件记录
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="max-h-[500px] overflow-y-auto">
+                        {history.length === 0 ? (
+                          <div className="text-center py-12 text-muted-foreground">
+                            <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                            <p className="text-sm">暂无历史记录</p>
+                          </div>
+                        ) : (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>文件名</TableHead>
+                                <TableHead>上传时间</TableHead>
+                                <TableHead>状态</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {history.map((record, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-medium">{record.filename}</TableCell>
+                                  <TableCell>{new Date(record.uploadTime).toLocaleString('zh-CN')}</TableCell>
+                                  <TableCell>
+                                    {record.status === 'completed' ? (
+                                      <Badge variant="outline">已完成</Badge>
+                                    ) : (
+                                      <Badge variant="destructive">失败</Badge>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
