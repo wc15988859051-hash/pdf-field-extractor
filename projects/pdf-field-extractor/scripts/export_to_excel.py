@@ -179,6 +179,18 @@ def fill_data_to_sheet(ws: openpyxl.worksheet.worksheet.Worksheet, data: List[Di
         sell = str(item.get("sell", ""))
         pdf_name = str(item.get("原PDF名称", ""))
 
+        # 添加前缀
+        if po:
+            po = f"PO#{po}"
+        if style_code:
+            style_code = f"style code#{style_code}"
+        if color_code:
+            color_code = f"color code#{color_code}"
+        if sell:
+            sell = f"GBP{sell}"
+        if total:
+            total = f"¥{total}"
+
         # 填充第 1 行（序号 + 主数据）
         ws.cell(row=start_row, column=1, value=seq_num)
         ws.cell(row=start_row, column=2, value=po)
@@ -351,6 +363,13 @@ def main():
         print("字段映射关系:")
         for old_key, new_key in FIELD_MAPPING.items():
             print(f"  {old_key} → {new_key}")
+        print("")
+        print("字段值前缀规则（导出时自动添加）:")
+        print("  PO → PO#PO值")
+        print("  style code → style code#style code值")
+        print("  color code → color code#color code值")
+        print("  sell → GBPsell值")
+        print("  total → ¥total值")
         sys.exit(1)
 
     json_path = sys.argv[1]

@@ -61,17 +61,23 @@ dependency:
 
 5. **字段映射和 Excel 导出**
    - 将提取的字段按以下映射关系转换：
-     - Article → color code
-     - Order Reference → PO
+     - Article → color code（导出时添加前缀 "color code#"）
+     - Order Reference → PO（导出时添加前缀 "PO#"）
      - Colour Name → color
-     - GBP Retail Price → sell
+     - GBP Retail Price → sell（导出时添加前缀 "GBP"）
      - Collection → style no
-     - Design Number → style code
+     - Design Number → style code（导出时添加前缀 "style code#"）
      - Ex Port Date → Ex-date
      - Total → quantity
      - Unit Price → unit price
-     - Line Value → total
+     - Line Value → total（导出时添加前缀 "¥"）
      - Product Name → style name
+   - 字段值前缀说明：
+     - PO 字段：添加前缀 "PO#"
+     - style code 字段：添加前缀 "style code#"
+     - color code 字段：添加前缀 "color code#"
+     - sell 字段：添加前缀 "GBP"
+     - total 字段：添加前缀 "¥"
    - 调用 `scripts/export_to_excel.py` 脚本导出 Excel 文件
    - 传入参数：JSON 数据文件路径、模板文件路径、Excel 输出文件路径
    - 脚本自动判断是新建还是更新：
@@ -155,6 +161,13 @@ dependency:
   - amount（列 8）：合并 5 行
   - amount after discount（列 9）：合并 5 行
   - delivery（列 10）：合并前 2 行
+- **字段值前缀规则**：
+  - PO（列 2）：添加前缀 "PO#"，例如 "PO#12345"
+  - style code（第 2 行，列 2）：添加前缀 "style code#"，例如 "style code#SC001"
+  - color code（第 3 行，列 2）：添加前缀 "color code#"，例如 "color code#CC001"
+  - sell（第 5 行，列 2）：添加前缀 "GBP"，例如 "GBP10.00"
+  - amount（列 8）：添加前缀 "¥"，例如 "¥500.00"
+  - 只有字段值非空时才添加前缀，空值不添加前缀
 - **增量更新机制**：
   - 如果目标 Excel 文件已存在，自动执行增量更新
   - 根据PDF文件名判断是否重复：
