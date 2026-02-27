@@ -67,9 +67,23 @@ export async function GET() {
     // 检查目录
     const dirs = ['/tmp/extracted'];
     for (const dir of dirs) {
-      health.checks[`Directory: ${dir}`] = {
-        status: existsSync(dir) ? 'ok' : 'created',
-      };
+      // 确保目录存在
+      const { mkdirSync } = require('fs');
+      try {
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true });
+        }
+        health.checks[`Directory: ${dir}`] = {
+          status: 'ok',
+          path: dir,
+        };
+      } catch (error) {
+        health.checks[`Directory: ${dir}`] = {
+          status: 'error',
+          error: error instanceof Error ? error.message : String(error),
+          path: dir,
+        };
+      }
     }
 
     // 确定整体状态

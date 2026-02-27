@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 const execAsync = promisify(exec);
+const PROJECT_ROOT = process.cwd();
 
 export async function GET(request: NextRequest) {
   const healthStatus: any = {
@@ -74,8 +76,9 @@ export async function GET(request: NextRequest) {
     let allFilesExist = true;
 
     for (const file of requiredFiles) {
-      const exists = existsSync(file);
-      fileChecks[file] = exists;
+      const fullPath = join(PROJECT_ROOT, file);
+      const exists = existsSync(fullPath);
+      fileChecks[file] = exists ? 'exists' : 'missing';
       if (!exists) {
         allFilesExist = false;
       }
@@ -90,13 +93,20 @@ export async function GET(request: NextRequest) {
       healthStatus.checks.requiredFiles.status = 'ok';
     }
 
-    // 6. 检查临时目录
+    // 6. 检查并创建临时目录
     const tempDirs = ['/tmp/pdfs', '/tmp/extracted'];
     const dirChecks: any = {};
 
     for (const dir of tempDirs) {
-      const exists = existsSync(dir);
-      dirChecks[dir] = exists ? 'exists' : 'not found (will be created)';
+      try {
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true });
+        }
+        dirChecks[dir] = 'exists';
+      } catch (error) {
+        dirChecks[dir] = 'error: ' + (error instanceof Error ? error.message : String(error));
+        healthStatus.status = 'error';
+      }
     }
 
     healthStatus.checks.temporaryDirectories = dirChecks;
