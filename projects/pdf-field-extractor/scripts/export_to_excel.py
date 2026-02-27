@@ -179,7 +179,19 @@ def fill_data_to_sheet(ws: openpyxl.worksheet.worksheet.Worksheet, data: List[Di
         sell = str(item.get("sell", ""))
         pdf_name = str(item.get("原PDF名称", ""))
 
-        # 添加前缀
+        # 清理已存在的前缀（避免重复添加）
+        if po.startswith("PO#"):
+            po = po[3:]  # 移除 PO# 前缀
+        if style_code.startswith("style code#"):
+            style_code = style_code[11:]  # 移除 style code# 前缀
+        if color_code.startswith("color code#"):
+            color_code = color_code[11:]  # 移除 color code# 前缀
+        if sell.startswith("GBP"):
+            sell = sell[3:]  # 移除 GBP 前缀
+        if total.startswith("¥"):
+            total = total[1:]  # 移除 ¥ 前缀
+
+        # 添加前缀（仅当值非空时）
         if po:
             po = f"PO#{po}"
         if style_code:
