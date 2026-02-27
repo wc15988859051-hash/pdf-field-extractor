@@ -1,0 +1,6 @@
+[skill]
+  skill_package = "pdf-field-extractor.skill"
+  name = "pdf-field-extractor"
+  description = "从 PDF 文件中提取指定业务字段并导出 Excel；当用户需要解析 PDF 文档并提取 Article、Order Reference、Colour Name、GBP Retail Price、Collection、Design Number、Ex Port Date、Total、Unit Price、Line Value、Product Name 等字段并映射导出时使用"
+  project_name = "PDF解析技能"
+  project_description = "PDF 字段提取与 Excel 导出"

@@ -20,6 +20,9 @@ interface PDFFile {
   uploadedAt: Date;
   extractedFields: ExtractedField[];
   status: 'pending' | 'processing' | 'completed' | 'error';
+  errorMessage?: string;
+  excelData?: string;  // Excel 文件的 Base64 数据
+  excelFilename?: string;  // Excel 文件名
 }
 
 // 默认字段映射（后续可由用户配置）
@@ -30,42 +33,42 @@ export default function PDFExtractorPage() {
   const [isDragging, setIsDragging] = useState(false);
 
   // 处理文件上传
-  const handleFileUpload = useCallback((files: FileList | null) => {
+  const handleFileUpload = useCallback(async (files: FileList | null) => {
     if (!files) return;
 
-    const newFiles: PDFFile[] = Array.from(files)
-      .filter(file => file.type === 'application/pdf')
-      .map(file => {
-        // 检查是否已存在同名文件
-        const existingFile = pdfFiles.find(f => f.name === file.name);
+    const uploadedFiles = Array.from(files).filter(file => file.type === 'application/pdf');
 
-        if (existingFile) {
-          // 覆盖现有文件
-          return {
-            ...existingFile,
-            size: file.size,
-            uploadedAt: new Date(),
-            status: 'pending' as const,
-            extractedFields: [],
-          };
-        }
+    // 创建新的文件对象，状态为 processing
+    const newFiles: PDFFile[] = uploadedFiles.map(file => {
+      const existingFile = pdfFiles.find(f => f.name === file.name);
 
+      if (existingFile) {
         return {
-          id: `${file.name}-${Date.now()}`,
-          name: file.name,
+          ...existingFile,
           size: file.size,
           uploadedAt: new Date(),
+          status: 'processing' as const,
           extractedFields: [],
-          status: 'pending' as const,
+          errorMessage: undefined,
         };
-      });
+      }
+
+      return {
+        id: `${file.name}-${Date.now()}`,
+        name: file.name,
+        size: file.size,
+        uploadedAt: new Date(),
+        extractedFields: [],
+        status: 'processing' as const,
+        errorMessage: undefined,
+      };
+    });
 
     // 合并文件列表，去重
     setPdfFiles(prev => {
       const existingNames = new Set(prev.map(f => f.name));
       const uniqueNewFiles = newFiles.filter(f => !existingNames.has(f.name));
-      
-      // 对于已存在的同名文件，更新它们
+
       const updatedPrev = prev.map(f => {
         const updatedFile = newFiles.find(nf => nf.name === f.name);
         return updatedFile || f;
@@ -73,7 +76,69 @@ export default function PDFExtractorPage() {
 
       return [...updatedPrev, ...uniqueNewFiles];
     });
+
+    // 对每个文件调用 API 进行解析
+    for (const file of uploadedFiles) {
+      await processPDF(file);
+    }
   }, [pdfFiles]);
+
+  // 处理单个 PDF 文件
+  const processPDF = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/parse-pdf', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || '解析失败');
+      }
+
+      // 转换字段数据为提取字段格式
+      const extractedFields: ExtractedField[] = Object.entries(result.fields || {}).map(
+        ([key, value]) => ({
+          fieldName: key,
+          fieldValue: String(value || ''),
+        })
+      );
+
+      // 更新文件状态
+      setPdfFiles(prev =>
+        prev.map(f => {
+          if (f.name === file.name) {
+            return {
+              ...f,
+              status: 'completed' as const,
+              extractedFields,
+              excelData: result.excelData,
+              excelFilename: result.excelFilename,
+            };
+          }
+          return f;
+        })
+      );
+    } catch (error) {
+      console.error(`处理文件 ${file.name} 失败:`, error);
+      setPdfFiles(prev =>
+        prev.map(f => {
+          if (f.name === file.name) {
+            return {
+              ...f,
+              status: 'error' as const,
+              errorMessage: error instanceof Error ? error.message : String(error),
+            };
+          }
+          return f;
+        })
+      );
+    }
+  };
 
   // 处理拖拽事件
   const handleDragOver = (e: React.DragEvent) => {
@@ -117,24 +182,31 @@ export default function PDFExtractorPage() {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  // 导出结果为JSON（示例功能）
-  const handleExport = () => {
-    const exportData = pdfFiles.map(file => ({
-      fileName: file.name,
-      uploadedAt: file.uploadedAt.toISOString(),
-      fields: file.extractedFields,
-    }));
-    
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-      type: 'application/json',
-    });
-    
+  // 下载 Excel 文件
+  const downloadExcel = (file: PDFFile) => {
+    if (!file.excelData || !file.excelFilename) {
+      return;
+    }
+
+    const byteCharacters = atob(file.excelData);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pdf-extraction-${Date.now()}.json`;
-    a.click();
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.excelFilename;
+    link.click();
     URL.revokeObjectURL(url);
+  };
+
+  // 导出所有结果为 Excel（合并功能，暂时禁用）
+  const handleExportAll = () => {
+    alert('此功能暂未实现。请单独下载每个 PDF 对应的 Excel 文件。');
   };
 
   return (
@@ -209,11 +281,11 @@ export default function PDFExtractorPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleExport}
+                  onClick={handleExportAll}
                   disabled={!pdfFiles.some(f => f.status === 'completed')}
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  导出结果
+                  导出全部
                 </Button>
               </div>
             </CardHeader>
@@ -235,9 +307,24 @@ export default function PDFExtractorPage() {
                           <p className="text-xs text-muted-foreground">
                             {formatFileSize(file.size)} · 上传于 {file.uploadedAt.toLocaleString('zh-CN')}
                           </p>
+                          {file.errorMessage && (
+                            <p className="text-xs text-destructive mt-1">
+                              错误: {file.errorMessage}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {file.status === 'completed' && file.excelData && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => downloadExcel(file)}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            下载 Excel
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -262,7 +349,7 @@ export default function PDFExtractorPage() {
                             {file.extractedFields.map((field, index) => (
                               <TableRow key={index}>
                                 <TableCell className="font-medium">{field.fieldName}</TableCell>
-                                <TableCell className="max-w-md truncate">{field.fieldValue}</TableCell>
+                                <TableCell className="max-w-md truncate">{field.fieldValue || '-'}</TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -270,10 +357,11 @@ export default function PDFExtractorPage() {
                       </div>
                     )}
 
-                    {file.status === 'pending' && (
+                    {file.status === 'processing' && (
                       <Alert>
+                        <RefreshCw className="h-4 w-4" />
                         <AlertDescription className="text-xs">
-                          等待提取字段配置和业务逻辑...
+                          正在解析 PDF 并提取字段...
                         </AlertDescription>
                       </Alert>
                     )}
@@ -294,20 +382,12 @@ export default function PDFExtractorPage() {
                   还没有上传任何文件
                 </p>
                 <p className="text-xs mt-2">
-                  上传PDF文件后，将在此处显示提取结果
+                  上传PDF文件后，系统将自动提取字段并生成 Excel 文件
                 </p>
               </div>
             </CardContent>
           </Card>
         )}
-
-        {/* 业务逻辑提示 */}
-        <Alert>
-          <RefreshCw className="h-4 w-4" />
-          <AlertDescription className="text-sm">
-            详细的业务逻辑（PDF解析、字段映射规则）将在后续提供。当前页面已完成文件上传和列表展示功能。
-          </AlertDescription>
-        </Alert>
       </div>
     </div>
   );
