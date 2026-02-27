@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// 动态导入pdf-parse以避免类型问题
-const pdfParse = require('pdf-parse');
+// 动态导入pdf-parse
+const pdfParseLib = require('pdf-parse');
+const pdfParse = pdfParseLib.PDFParse;
 
 // 字段映射关系
 const FIELD_MAPPING = {
