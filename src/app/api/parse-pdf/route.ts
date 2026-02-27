@@ -191,15 +191,44 @@ ${pdfText}`;
     ];
 
     // 使用 LLM 提取字段
+    console.log('开始调用 LLM...');
     const response = await client.invoke(messages, {
       model: "doubao-seed-1-8-251228",
       temperature: 0.3, // 使用较低的温度以确保准确性
     });
 
     console.log('LLM 原始返回:', response.content);
+    console.log('LLM 返回长度:', response.content?.length || 0);
+    console.log('LLM 返回类型:', typeof response.content);
+
+    // 检查 LLM 返回是否有效
+    if (!response.content || typeof response.content !== 'string') {
+      console.error('LLM 返回内容无效');
+      throw new Error('LLM 返回内容无效');
+    }
+
+    // 尝试提取 JSON 内容（可能 LLM 返回的内容包含了额外的文本）
+    let jsonContent = response.content.trim();
+
+    // 尝试找到 JSON 对象的开始和结束
+    const jsonStart = jsonContent.indexOf('{');
+    const jsonEnd = jsonContent.lastIndexOf('}');
+
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      jsonContent = jsonContent.substring(jsonStart, jsonEnd + 1);
+      console.log('提取的 JSON 内容:', jsonContent);
+    }
 
     // 解析 LLM 返回的 JSON
-    const extractedFields = JSON.parse(response.content);
+    let extractedFields;
+    try {
+      extractedFields = JSON.parse(jsonContent);
+    } catch (parseError) {
+      console.error('JSON 解析失败:', parseError);
+      console.error('原始内容:', response.content);
+      console.error('尝试解析的内容:', jsonContent);
+      throw new Error(`LLM 返回的不是有效的 JSON 格式: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+    }
 
     console.log('解析后的字段:', JSON.stringify(extractedFields, null, 2));
 
@@ -214,10 +243,24 @@ ${pdfText}`;
 
     return fields;
   } catch (error) {
-    console.error('LLM 字段提取错误:', error);
-    console.error('错误详情:', error instanceof Error ? error.stack : String(error));
+    console.error('=== LLM 字段提取失败 ===');
+    console.error('错误类型:', error?.constructor?.name);
+    console.error('错误消息:', error instanceof Error ? error.message : String(error));
+    console.error('错误堆栈:', error instanceof Error ? error.stack : 'N/A');
+
+    // 检查是否是网络错误或 API 错误
+    if (error && typeof error === 'object') {
+      if ('code' in error) {
+        console.error('错误代码:', (error as any).code);
+      }
+      if ('status' in error) {
+        console.error('HTTP 状态:', (error as any).status);
+      }
+    }
+    console.error('=== LLM 错误结束 ===');
 
     // 如果 LLM 失败，返回空对象
+    console.warn('LLM 提取失败，返回空字段对象');
     const fields: any = {};
     for (const field of REQUIRED_FIELDS) {
       fields[field] = '';

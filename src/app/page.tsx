@@ -111,6 +111,7 @@ export default function PDFExtractorPage() {
 
   // 处理单个 PDF 文件
   const processPDF = async (file: File) => {
+    console.log(`开始处理文件: ${file.name}`);
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -120,10 +121,39 @@ export default function PDFExtractorPage() {
         body: formData,
       });
 
-      const result = await response.json();
+      console.log(`文件 ${file.name} 的响应状态:`, response.status, response.statusText);
+      console.log(`响应类型:`, response.headers.get('content-type'));
 
+      // 检查响应是否成功
       if (!response.ok) {
-        throw new Error(result.error || '解析失败');
+        // 尝试读取错误信息
+        let errorMessage = '解析失败';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (jsonError) {
+          // 如果无法解析 JSON，尝试读取文本
+          const errorText = await response.text();
+          console.error('错误响应内容:', errorText);
+          errorMessage = `HTTP ${response.status}: ${errorText.substring(0, 200)}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      // 解析成功的响应
+      let result;
+      try {
+        result = await response.json();
+        console.log(`文件 ${file.name} 的解析结果:`, result);
+      } catch (jsonError) {
+        console.error('JSON 解析失败:', jsonError);
+        const responseText = await response.text();
+        console.error('响应内容:', responseText);
+        throw new Error('服务器返回了无效的响应格式');
+      }
+
+      if (!result.success) {
+        throw new Error(result.message || '解析失败');
       }
 
       // 转换字段数据为提取字段格式
