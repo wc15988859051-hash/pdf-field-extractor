@@ -414,9 +414,42 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('PDF 解析错误:', error);
+    console.error('=== PDF 解析 API 错误 ===');
+    console.error('错误类型:', error?.constructor?.name);
+    console.error('错误消息:', error instanceof Error ? error.message : String(error));
+    console.error('错误堆栈:', error instanceof Error ? error.stack : 'N/A');
+
+    // 尝试获取更多错误详情
+    if (error && typeof error === 'object') {
+      if ('code' in error) {
+        console.error('错误代码:', (error as any).code);
+      }
+      if ('status' in error) {
+        console.error('HTTP 状态:', (error as any).status);
+      }
+      if ('stderr' in error) {
+        console.error('stderr:', (error as any).stderr);
+      }
+      if ('stdout' in error) {
+        console.error('stdout:', (error as any).stdout);
+      }
+    }
+
+    console.error('=== 错误详情结束 ===');
+
+    // 返回详细的错误信息
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : '';
+
     return NextResponse.json(
-      { error: 'PDF 解析失败: ' + (error instanceof Error ? error.message : String(error)) },
+      {
+        error: 'PDF 解析失败: ' + errorMessage,
+        details: {
+          type: error?.constructor?.name || 'Unknown',
+          message: errorMessage,
+          stack: process.env.NODE_ENV === 'development' ? errorStack : undefined,
+        }
+      },
       { status: 500 }
     );
   }

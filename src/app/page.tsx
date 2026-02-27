@@ -38,6 +38,29 @@ export default function PDFExtractorPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<'ok' | 'error' | 'checking'>('checking');
+
+  // 检查服务健康状态
+  const checkHealth = async () => {
+    setHealthStatus('checking');
+    try {
+      const response = await fetch('/api/health');
+      const data = await response.json();
+      setHealthStatus(data.status === 'ok' ? 'ok' : 'error');
+      console.log('健康检查结果:', data);
+    } catch (error) {
+      setHealthStatus('error');
+      console.error('健康检查失败:', error);
+    }
+  };
+
+  // 页面加载时检查健康状态
+  useEffect(() => {
+    checkHealth();
+    // 每 60 秒检查一次
+    const interval = setInterval(checkHealth, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   // 从 localStorage 加载历史记录
   useEffect(() => {
@@ -138,13 +161,25 @@ export default function PDFExtractorPage() {
       if (!response.ok) {
         // 尝试从文本中解析错误信息
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        let errorDetails: any = null;
+
         try {
           const errorData = JSON.parse(responseText);
           errorMessage = errorData.error || errorMessage;
+          errorDetails = errorData.details;
         } catch (jsonError) {
           // 如果无法解析 JSON，使用原始文本（截断以避免太长）
           errorMessage = `HTTP ${response.status}: ${responseText.substring(0, 200)}`;
         }
+
+        console.error(`文件 ${file.name} 解析失败:`, errorMessage);
+        console.error('错误详情:', errorDetails);
+
+        // 如果有错误详情，显示更多信息
+        if (errorDetails && errorDetails.type) {
+          errorMessage += ` (类型: ${errorDetails.type})`;
+        }
+
         throw new Error(errorMessage);
       }
 
@@ -290,6 +325,26 @@ export default function PDFExtractorPage() {
           <p className="text-muted-foreground text-sm md:text-base">
             上传PDF文件，自动提取业务字段并合并到同一个 Excel 表格
           </p>
+
+          {/* 健康状态栏 */}
+          <div className="flex items-center justify-center gap-2 pt-2">
+            {healthStatus === 'checking' ? (
+              <Badge variant="outline" className="gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                正在检查服务状态...
+              </Badge>
+            ) : healthStatus === 'ok' ? (
+              <Badge variant="default" className="gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-400" />
+                服务正常
+              </Badge>
+            ) : (
+              <Badge variant="destructive" className="gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-400" />
+                服务异常 - <Button variant="ghost" size="sm" className="h-4 px-2 -mx-2 -my-1 text-white hover:text-white" onClick={checkHealth}>刷新</Button>
+              </Badge>
+            )}
+          </div>
         </div>
 
         {/* 上传区域 */}
