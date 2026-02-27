@@ -30,12 +30,6 @@ interface HistoryRecord {
   status: 'completed' | 'error';
 }
 
-interface HealthCheck {
-  status: string;
-  timestamp: string;
-  checks: Record<string, any>;
-}
-
 // 默认字段映射（后续可由用户配置）
 const DEFAULT_FIELDS = ['文档标题', '文档作者', '创建日期', '页数'];
 
@@ -44,48 +38,6 @@ export default function PDFExtractorPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const [healthStatus, setHealthStatus] = useState<'ok' | 'error' | 'checking'>('checking');
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [diagnosticsData, setDiagnosticsData] = useState<HealthCheck | null>(null);
-  const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
-
-  // 检查服务健康状态
-  const checkHealth = async () => {
-    setHealthStatus('checking');
-    try {
-      const response = await fetch('/api/health');
-      const data = await response.json();
-      setHealthStatus(data.status === 'ok' ? 'ok' : 'error');
-      console.log('健康检查结果:', data);
-    } catch (error) {
-      setHealthStatus('error');
-      console.error('健康检查失败:', error);
-    }
-  };
-
-  // 获取诊断信息
-  const getDiagnostics = async () => {
-    setIsLoadingDiagnostics(true);
-    try {
-      const response = await fetch('/api/test');
-      const data = await response.json();
-      setDiagnosticsData(data);
-      setShowDiagnostics(true);
-    } catch (error) {
-      console.error('获取诊断信息失败:', error);
-      alert('获取诊断信息失败');
-    } finally {
-      setIsLoadingDiagnostics(false);
-    }
-  };
-
-  // 页面加载时检查健康状态
-  useEffect(() => {
-    checkHealth();
-    // 每 60 秒检查一次
-    const interval = setInterval(checkHealth, 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   // 从 localStorage 加载历史记录
   useEffect(() => {
@@ -159,7 +111,6 @@ export default function PDFExtractorPage() {
 
   // 处理单个 PDF 文件
   const processPDF = async (file: File) => {
-    console.log(`开始处理文件: ${file.name}`);
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -169,57 +120,10 @@ export default function PDFExtractorPage() {
         body: formData,
       });
 
-      console.log(`文件 ${file.name} 的响应状态:`, response.status, response.statusText);
-      console.log(`响应类型:`, response.headers.get('content-type'));
+      const result = await response.json();
 
-      // 先读取响应文本（只能读取一次）
-      let responseText;
-      try {
-        responseText = await response.text();
-        console.log(`文件 ${file.name} 的响应内容:`, responseText);
-      } catch (textError) {
-        console.error('读取响应内容失败:', textError);
-        throw new Error('无法读取服务器响应');
-      }
-
-      // 检查响应是否成功
       if (!response.ok) {
-        // 尝试从文本中解析错误信息
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        let errorDetails: any = null;
-
-        try {
-          const errorData = JSON.parse(responseText);
-          errorMessage = errorData.error || errorMessage;
-          errorDetails = errorData.details;
-        } catch (jsonError) {
-          // 如果无法解析 JSON，使用原始文本（截断以避免太长）
-          errorMessage = `HTTP ${response.status}: ${responseText.substring(0, 200)}`;
-        }
-
-        console.error(`文件 ${file.name} 解析失败:`, errorMessage);
-        console.error('错误详情:', errorDetails);
-
-        // 如果有错误详情，显示更多信息
-        if (errorDetails && errorDetails.type) {
-          errorMessage += ` (类型: ${errorDetails.type})`;
-        }
-
-        throw new Error(errorMessage);
-      }
-
-      // 解析成功的响应
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (jsonError) {
-        console.error('JSON 解析失败:', jsonError);
-        console.error('响应内容:', responseText);
-        throw new Error('服务器返回了无效的响应格式');
-      }
-
-      if (!result.success) {
-        throw new Error(result.message || '解析失败');
+        throw new Error(result.error || '解析失败');
       }
 
       // 转换字段数据为提取字段格式
@@ -350,56 +254,6 @@ export default function PDFExtractorPage() {
           <p className="text-muted-foreground text-sm md:text-base">
             上传PDF文件，自动提取业务字段并合并到同一个 Excel 表格
           </p>
-
-          {/* 健康状态栏 */}
-          <div className="flex items-center justify-center gap-2 pt-2">
-            {healthStatus === 'checking' ? (
-              <Badge variant="outline" className="gap-1">
-                <RefreshCw className="h-3 w-3 animate-spin" />
-                正在检查服务状态...
-              </Badge>
-            ) : healthStatus === 'ok' ? (
-              <>
-                <Badge variant="default" className="gap-1">
-                  <span className="w-2 h-2 rounded-full bg-green-400" />
-                  服务正常
-                </Badge>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-xs"
-                  onClick={getDiagnostics}
-                  disabled={isLoadingDiagnostics}
-                >
-                  {isLoadingDiagnostics ? (
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                  ) : (
-                    '系统诊断'
-                  )}
-                </Button>
-              </>
-            ) : (
-              <>
-                <Badge variant="destructive" className="gap-1">
-                  <span className="w-2 h-2 rounded-full bg-red-400" />
-                  服务异常 - <Button variant="ghost" size="sm" className="h-4 px-2 -mx-2 -my-1 text-white hover:text-white" onClick={checkHealth}>刷新</Button>
-                </Badge>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-xs text-red-400 hover:text-red-300"
-                  onClick={getDiagnostics}
-                  disabled={isLoadingDiagnostics}
-                >
-                  {isLoadingDiagnostics ? (
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                  ) : (
-                    '系统诊断'
-                  )}
-                </Button>
-              </>
-            )}
-          </div>
         </div>
 
         {/* 上传区域 */}
@@ -613,71 +467,6 @@ export default function PDFExtractorPage() {
           </Card>
         )}
       </div>
-
-      {/* 系统诊断对话框 */}
-      <Dialog open={showDiagnostics} onOpenChange={setShowDiagnostics}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RefreshCw className="h-5 w-5" />
-              系统诊断
-            </DialogTitle>
-            <DialogDescription>
-              查看系统各组件的运行状态
-            </DialogDescription>
-          </DialogHeader>
-          {diagnosticsData ? (
-            <div className="space-y-4">
-              {/* 整体状态 */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">整体状态:</span>
-                <Badge variant={diagnosticsData.status === 'healthy' ? 'default' : 'destructive'}>
-                  {diagnosticsData.status === 'healthy' ? '正常' : '异常'}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(diagnosticsData.timestamp).toLocaleString('zh-CN')}
-                </span>
-              </div>
-
-              {/* 详细检查项 */}
-              <div className="space-y-2">
-                {Object.entries(diagnosticsData.checks).map(([key, value]: [string, any]) => (
-                  <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      {value.status === 'ok' ? (
-                        <span className="w-2 h-2 rounded-full bg-green-400" />
-                      ) : (
-                        <span className="w-2 h-2 rounded-full bg-red-400" />
-                      )}
-                      <span className="text-sm font-medium">{key}</span>
-                    </div>
-                    <div className="text-right">
-                      <Badge variant={value.status === 'ok' ? 'outline' : 'destructive'}>
-                        {value.status}
-                      </Badge>
-                      {value.version && (
-                        <div className="text-xs text-muted-foreground mt-1">{value.version}</div>
-                      )}
-                      {value.path && (
-                        <div className="text-xs text-muted-foreground mt-1 truncate max-w-[200px]">
-                          {value.path}
-                        </div>
-                      )}
-                      {value.error && (
-                        <div className="text-xs text-destructive mt-1">{value.error}</div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

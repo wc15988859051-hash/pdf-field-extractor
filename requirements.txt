@@ -1,7 +1,0 @@
-# PDF 字段提取应用 - Python 依赖
-
-# PDF 解析库
-PyMuPDF==1.23.26
-
-# Excel 操作库
-openpyxl==3.1.5
