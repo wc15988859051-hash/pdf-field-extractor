@@ -8,6 +8,9 @@ import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 
 const execAsync = promisify(exec);
 
+// 获取项目根目录
+const PROJECT_ROOT = process.cwd();
+
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
@@ -28,8 +31,8 @@ const REQUIRED_FIELDS = [
 
 // 解析 PDF 并提取文本
 async function parsePDF(filePath: string): Promise<string> {
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/parse_pdf.py';
-  const { stdout, stderr } = await execAsync(`python3 ${scriptPath} "${filePath}"`);
+  const scriptPath = join(PROJECT_ROOT, 'scripts', 'parse_pdf.py');
+  const { stdout, stderr } = await execAsync(`python3 "${scriptPath}" "${filePath}"`);
 
   if (stderr && !stdout) {
     throw new Error(`PDF 解析失败: ${stderr}`);
@@ -139,7 +142,7 @@ ${pdfText}`;
 async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
   const extractedDir = '/tmp/extracted';
   const jsonDataPath = join(extractedDir, `temp_${pdfFilename}_${Date.now()}.json`);
-  const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
+  const templatePath = join(PROJECT_ROOT, 'assets', 'template.xlsx');
 
   // 确保导出目录存在
   if (!existsSync(extractedDir)) {
@@ -156,9 +159,9 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
   await writeFile(jsonDataPath, JSON.stringify(dataWithFilename, null, 2), 'utf-8');
 
   // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/export_to_excel.py';
+  const scriptPath = join(PROJECT_ROOT, 'scripts', 'export_to_excel.py');
   const { stdout, stderr } = await execAsync(
-    `python3 ${scriptPath} "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
+    `python3 "${scriptPath}" "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
   );
 
   if (stderr && !stdout) {
