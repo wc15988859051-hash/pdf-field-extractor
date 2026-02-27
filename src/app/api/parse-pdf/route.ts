@@ -32,10 +32,30 @@ const REQUIRED_FIELDS = [
 // 解析 PDF 并提取文本
 async function parsePDF(filePath: string): Promise<string> {
   const scriptPath = join(PROJECT_ROOT, 'public', 'scripts', 'parse_pdf.py');
+  console.log('PDF 解析脚本路径:', scriptPath);
+  console.log('PDF 文件路径:', filePath);
+  console.log('工作目录:', PROJECT_ROOT);
+  console.log('脚本文件是否存在:', existsSync(scriptPath));
+
+  if (!existsSync(scriptPath)) {
+    throw new Error(`PDF 解析脚本不存在: ${scriptPath}`);
+  }
+
+  if (!existsSync(filePath)) {
+    throw new Error(`PDF 文件不存在: ${filePath}`);
+  }
+
   const { stdout, stderr } = await execAsync(`python3 "${scriptPath}" "${filePath}"`);
 
-  if (stderr && !stdout) {
+  // 如果有错误输出，记录并抛出异常
+  if (stderr) {
+    console.error('PDF 解析脚本 stderr:', stderr);
     throw new Error(`PDF 解析失败: ${stderr}`);
+  }
+
+  // 如果没有标准输出，也可能是错误
+  if (!stdout || stdout.trim().length === 0) {
+    throw new Error('PDF 解析失败: 脚本没有输出任何内容');
   }
 
   return stdout;
@@ -160,12 +180,23 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
 
   // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
   const scriptPath = join(PROJECT_ROOT, 'public', 'scripts', 'export_to_excel.py');
+  console.log('Excel 导出脚本路径:', scriptPath);
+  console.log('临时 JSON 文件路径:', jsonDataPath);
+  console.log('模板文件路径:', templatePath);
+  console.log('输出 Excel 文件路径:', GLOBAL_EXCEL_PATH);
+
   const { stdout, stderr } = await execAsync(
     `python3 "${scriptPath}" "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
   );
 
-  if (stderr && !stdout) {
+  // 如果有错误输出，记录并抛出异常
+  if (stderr) {
+    console.error('Excel 导出脚本 stderr:', stderr);
     throw new Error(`Excel 导出失败: ${stderr}`);
+  }
+
+  if (!stdout) {
+    console.warn('Excel 导出脚本没有输出');
   }
 
   // 清理临时 JSON 文件
@@ -206,10 +237,14 @@ export async function POST(request: NextRequest) {
       await mkdir(pdfDir, { recursive: true });
     }
 
+    console.log('保存 PDF 文件:', pdfPath);
     await writeFile(pdfPath, buffer);
+    console.log('PDF 文件保存成功');
 
     // 步骤 1: 解析 PDF
+    console.log('开始解析 PDF...');
     const pdfText = await parsePDF(pdfPath);
+    console.log('PDF 解析成功，文本长度:', pdfText.length);
 
     // 步骤 2: 提取字段（使用 LLM）
     const extractedFields = await extractFieldsWithLLM(pdfText);
