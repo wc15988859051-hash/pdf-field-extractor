@@ -70,14 +70,20 @@ dependency:
      - Ex Port Date → Ex-date
      - Total → quantity
      - Unit Price → unit price
-     - Line Value → total（导出时添加前缀 "¥"）
+     - Line Value → total（导出时格式化为美元，添加前缀 "$"，保留 2 位小数，添加千位分隔符）
      - Product Name → style name
    - 字段值前缀说明：
      - PO 字段：添加前缀 "PO#"
      - style code 字段：添加前缀 "style code#"
      - color code 字段：添加前缀 "color code#"
      - sell 字段：添加前缀 "GBP"
-     - total 字段：添加前缀 "¥"
+     - total 字段：格式化为美元格式，例如 "$55,345.00"
+   - 金额格式说明：
+     - total 字段自动格式化为美元格式
+     - 添加 "$" 前缀
+     - 保留 2 位小数
+     - 添加千位分隔符（逗号）
+     - 示例：100 → "$100.00"，50000 → "$50,000.00"，52345.6 → "$52,345.60"
    - 调用 `scripts/export_to_excel.py` 脚本导出 Excel 文件
    - 传入参数：JSON 数据文件路径、模板文件路径、Excel 输出文件路径
    - 脚本自动判断是新建还是更新：
@@ -166,7 +172,7 @@ dependency:
   - style code（第 2 行，列 2）：添加前缀 "style code#"，例如 "style code#SC001"
   - color code（第 3 行，列 2）：添加前缀 "color code#"，例如 "color code#CC001"
   - sell（第 5 行，列 2）：添加前缀 "GBP"，例如 "GBP10.00"
-  - amount（列 8）：添加前缀 "¥"，例如 "¥500.00"
+  - amount（列 8）：格式化为美元格式，添加 "$" 前缀，保留 2 位小数，添加千位分隔符，例如 "$55,345.00"
   - 只有字段值非空时才添加前缀，空值不添加前缀
 - **增量更新机制**：
   - 如果目标 Excel 文件已存在，自动执行增量更新

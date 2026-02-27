@@ -188,8 +188,8 @@ def fill_data_to_sheet(ws: openpyxl.worksheet.worksheet.Worksheet, data: List[Di
             color_code = color_code[11:]  # 移除 color code# 前缀
         if sell.startswith("GBP"):
             sell = sell[3:]  # 移除 GBP 前缀
-        if total.startswith("¥"):
-            total = total[1:]  # 移除 ¥ 前缀
+        if total.startswith("¥") or total.startswith("$"):
+            total = total[1:]  # 移除 ¥ 或 $ 前缀
 
         # 添加前缀（仅当值非空时）
         if po:
@@ -201,7 +201,21 @@ def fill_data_to_sheet(ws: openpyxl.worksheet.worksheet.Worksheet, data: List[Di
         if sell:
             sell = f"GBP{sell}"
         if total:
-            total = f"¥{total}"
+            # 格式化金额：移除非数字字符，保留2位小数，添加千位分隔符，添加$前缀
+            import re
+            # 提取数字和小数点
+            numeric_part = re.sub(r'[^\d.]', '', total)
+            if numeric_part:
+                try:
+                    # 转换为浮点数并格式化
+                    amount_float = float(numeric_part)
+                    # 格式化为：$55,345.00
+                    total = f"${amount_float:,.2f}"
+                except ValueError:
+                    # 如果转换失败，保留原始值
+                    total = f"${total}"
+            else:
+                total = f"${total}"
 
         # 填充第 1 行（序号 + 主数据）
         ws.cell(row=start_row, column=1, value=seq_num)
@@ -381,7 +395,7 @@ def main():
         print("  style code → style code#style code值")
         print("  color code → color code#color code值")
         print("  sell → GBPsell值")
-        print("  total → ¥total值")
+        print("  total → 美元格式，例如：$55,345.00（保留2位小数，添加千位分隔符）")
         sys.exit(1)
 
     json_path = sys.argv[1]
