@@ -11,6 +11,27 @@ const execAsync = promisify(exec);
 // 获取项目根目录
 const PROJECT_ROOT = process.cwd();
 
+// 检查 Python 是否可用
+async function checkPythonAvailable(): Promise<string> {
+  try {
+    const { stdout } = await execAsync('which python3');
+    const pythonPath = stdout.trim();
+    if (!pythonPath) {
+      throw new Error('python3 命令未找到');
+    }
+    console.log('Python 路径:', pythonPath);
+
+    // 检查 Python 版本
+    const { stdout: versionOutput } = await execAsync(`${pythonPath} --version`);
+    console.log('Python 版本:', versionOutput.trim());
+
+    return pythonPath;
+  } catch (error) {
+    console.error('检查 Python 可用性失败:', error);
+    throw new Error('Python3 不可用，请确保已安装 Python 3');
+  }
+}
+
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
@@ -31,6 +52,9 @@ const REQUIRED_FIELDS = [
 
 // 解析 PDF 并提取文本
 async function parsePDF(filePath: string): Promise<string> {
+  // 先检查 Python 是否可用
+  const pythonPath = await checkPythonAvailable();
+
   const scriptPath = join(PROJECT_ROOT, 'public', 'scripts', 'parse_pdf.py');
   console.log('PDF 解析脚本路径:', scriptPath);
   console.log('PDF 文件路径:', filePath);
@@ -45,20 +69,27 @@ async function parsePDF(filePath: string): Promise<string> {
     throw new Error(`PDF 文件不存在: ${filePath}`);
   }
 
-  const { stdout, stderr } = await execAsync(`python3 "${scriptPath}" "${filePath}"`);
+  try {
+    const { stdout, stderr } = await execAsync(`"${pythonPath}" "${scriptPath}" "${filePath}"`);
 
-  // 如果有错误输出，记录并抛出异常
-  if (stderr) {
-    console.error('PDF 解析脚本 stderr:', stderr);
-    throw new Error(`PDF 解析失败: ${stderr}`);
+    // 如果有错误输出，记录并抛出异常
+    if (stderr) {
+      console.error('PDF 解析脚本 stderr:', stderr);
+      throw new Error(`PDF 解析失败: ${stderr}`);
+    }
+
+    // 如果没有标准输出，也可能是错误
+    if (!stdout || stdout.trim().length === 0) {
+      throw new Error('PDF 解析失败: 脚本没有输出任何内容');
+    }
+
+    return stdout;
+  } catch (error: any) {
+    console.error('PDF 解析命令执行失败:', error);
+    // 提取详细的错误信息
+    const errorMessage = error.stderr || error.stdout || error.message || String(error);
+    throw new Error(`PDF 解析失败: ${errorMessage}`);
   }
-
-  // 如果没有标准输出，也可能是错误
-  if (!stdout || stdout.trim().length === 0) {
-    throw new Error('PDF 解析失败: 脚本没有输出任何内容');
-  }
-
-  return stdout;
 }
 
 // 使用 LLM 提取字段
@@ -160,6 +191,9 @@ ${pdfText}`;
 
 // 导出 Excel（追加到全局 Excel 文件）
 async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
+  // 先检查 Python 是否可用
+  const pythonPath = await checkPythonAvailable();
+
   const extractedDir = '/tmp/extracted';
   const jsonDataPath = join(extractedDir, `temp_${pdfFilename}_${Date.now()}.json`);
   const templatePath = join(PROJECT_ROOT, 'public', 'assets', 'template.xlsx');
@@ -184,19 +218,35 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
   console.log('临时 JSON 文件路径:', jsonDataPath);
   console.log('模板文件路径:', templatePath);
   console.log('输出 Excel 文件路径:', GLOBAL_EXCEL_PATH);
+  console.log('脚本文件是否存在:', existsSync(scriptPath));
 
-  const { stdout, stderr } = await execAsync(
-    `python3 "${scriptPath}" "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
-  );
-
-  // 如果有错误输出，记录并抛出异常
-  if (stderr) {
-    console.error('Excel 导出脚本 stderr:', stderr);
-    throw new Error(`Excel 导出失败: ${stderr}`);
+  if (!existsSync(scriptPath)) {
+    throw new Error(`Excel 导出脚本不存在: ${scriptPath}`);
   }
 
-  if (!stdout) {
-    console.warn('Excel 导出脚本没有输出');
+  if (!existsSync(templatePath)) {
+    throw new Error(`Excel 模板文件不存在: ${templatePath}`);
+  }
+
+  try {
+    const { stdout, stderr } = await execAsync(
+      `"${pythonPath}" "${scriptPath}" "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
+    );
+
+    // 如果有错误输出，记录并抛出异常
+    if (stderr) {
+      console.error('Excel 导出脚本 stderr:', stderr);
+      throw new Error(`Excel 导出失败: ${stderr}`);
+    }
+
+    if (!stdout) {
+      console.warn('Excel 导出脚本没有输出');
+    }
+  } catch (error: any) {
+    console.error('Excel 导出命令执行失败:', error);
+    // 提取详细的错误信息
+    const errorMessage = error.stderr || error.stdout || error.message || String(error);
+    throw new Error(`Excel 导出失败: ${errorMessage}`);
   }
 
   // 清理临时 JSON 文件
