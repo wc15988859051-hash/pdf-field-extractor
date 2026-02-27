@@ -1,176 +1,65 @@
+/**
+ * PDF 解析 API 路由
+ * 接收 PDF 文件，解析并提取字段，导出到全局 Excel 文件
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, unlink, readFile } from 'fs/promises';
-import { existsSync } from 'fs';
 import { join } from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { HeaderUtils } from 'coze-coding-dev-sdk';
 
-const execAsync = promisify(exec);
+// 工具函数
+import { initTempDirs, saveFile, deleteFile } from '@/lib/utils/file-helper';
+import { parsePDF, exportExcel } from '@/lib/utils/python-helper';
+import { extractFieldsWithLLM } from '@/lib/utils/llm-helper';
+import { writeFile, unlink } from 'fs/promises';
 
-// 全局 Excel 文件路径
-const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
+// 配置
+import { PATHS, FILE_SIZE_LIMIT } from '@/lib/config/constants';
+import type { ExtractedRawFields, ExcelDataItem } from '@/lib/types';
 
-// 需要提取的字段列表
-const REQUIRED_FIELDS = [
-  'Article',
-  'Order Reference',
-  'Colour Name',
-  'GBP Retail Price',
-  'Collection',
-  'Design Number',
-  'Ex Port Date',
-  'Total',
-  'Unit Price',
-  'Line Value',
-  'Product Name'
-];
-
-// 解析 PDF 并提取文本
-async function parsePDF(filePath: string): Promise<string> {
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/parse_pdf.py';
-  const { stdout, stderr } = await execAsync(`python3 ${scriptPath} "${filePath}"`);
-
-  if (stderr && !stdout) {
-    throw new Error(`PDF 解析失败: ${stderr}`);
-  }
-
-  return stdout;
+/**
+ * 将提取的字段转换为 Excel 格式
+ */
+function convertToExcelFormat(fields: ExtractedRawFields, pdfFilename: string): ExcelDataItem {
+  return {
+    ...fields,
+    "原PDF名称": pdfFilename,
+  };
 }
 
-// 使用 LLM 提取字段
-async function extractFieldsWithLLM(pdfText: string): Promise<any> {
-  try {
-    const config = new Config();
-    const client = new LLMClient(config);
-
-    // 构建系统提示，明确告诉 LLM 需要提取的字段和格式
-    const systemPrompt = `你是一个专业的 PDF 字段提取助手。你的任务是从 PDF 文本内容中提取特定的业务字段。
-
-请从提供的文本中提取以下字段，并以严格的 JSON 格式返回：
-
-必需字段列表：
-1. Article - 产品编号/货号
-2. Order Reference - 订单参考号/订单号
-3. Colour Name - 颜色名称
-4. GBP Retail Price - 英镑零售价
-5. Collection - 系列/集合/款式编号
-6. Design Number - 设计编号
-7. Ex Port Date - 出口日期
-8. Total - 总额/总数量（重要：这对应 Excel 的 quantity 列，表示数量）
-9. Unit Price - 单价（重要：这对应 Excel 的 unit price 列）
-10. Line Value - 行金额/总金额（重要：这对应 Excel 的 amount 列，表示金额值）
-11. Product Name - 产品名称
-
-重要注意事项：
-1. 必须识别 Total（总额/数量）和 Line Value（行金额/金额值）这两个不同的字段
-2. Total 通常表示数量，Line Value 通常表示金额
-3. 如果字段名称有变体，请根据上下文判断：
-   - Total 可能显示为：Total、Quantity、数量、总数
-   - Line Value 可能显示为：Line Value、Amount、金额、总价、总金额
-4. 只返回纯 JSON 格式，不要包含任何其他解释或说明
-5. 如果某个字段在文本中找不到，将其值设为空字符串 ""
-6. 字段名称必须完全匹配上面的列表
-7. 仔细分析文本内容，特别是表格数据
-8. 返回的 JSON 必须是有效的 JSON 格式
-
-返回格式示例（不要包含其他文字）：
-{
-  "Article": "值",
-  "Order Reference": "值",
-  "Colour Name": "值",
-  "GBP Retail Price": "值",
-  "Collection": "值",
-  "Design Number": "值",
-  "Ex Port Date": "值",
-  "Total": "值",
-  "Unit Price": "值",
-  "Line Value": "值",
-  "Product Name": "值"
-}`;
-
-    const userMessage = `请从以下 PDF 文本内容中提取指定的业务字段。仔细分析表格数据和字段名称的变体。
-
-PDF 文本内容：
-${pdfText}`;
-
-    const messages = [
-      { role: "system" as const, content: systemPrompt },
-      { role: "user" as const, content: userMessage },
-    ];
-
-    // 使用 LLM 提取字段
-    const response = await client.invoke(messages, {
-      model: "doubao-seed-1-8-251228",
-      temperature: 0.3, // 使用较低的温度以确保准确性
-    });
-
-    console.log('LLM 原始返回:', response.content);
-
-    // 解析 LLM 返回的 JSON
-    const extractedFields = JSON.parse(response.content);
-
-    console.log('解析后的字段:', JSON.stringify(extractedFields, null, 2));
-
-    // 确保所有必需字段都存在
-    const fields: any = {};
-    for (const field of REQUIRED_FIELDS) {
-      fields[field] = extractedFields[field] || '';
-      if (!fields[field]) {
-        console.warn(`警告: 字段 ${field} 提取为空`);
-      }
-    }
-
-    return fields;
-  } catch (error) {
-    console.error('LLM 字段提取错误:', error);
-    console.error('错误详情:', error instanceof Error ? error.stack : String(error));
-
-    // 如果 LLM 失败，返回空对象
-    const fields: any = {};
-    for (const field of REQUIRED_FIELDS) {
-      fields[field] = '';
-    }
-    return fields;
-  }
-}
-
-// 导出 Excel（追加到全局 Excel 文件）
-async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
-  const jsonDataPath = join('/tmp/extracted', `temp_${pdfFilename}_${Date.now()}.json`);
-  const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
-
-  // 确保 PDF 文件名在数据中
-  const dataWithFilename = data.map(item => ({
-    ...item,
-    "原PDF名称": pdfFilename
-  }));
+/**
+ * 导出数据到 Excel 文件
+ */
+async function exportToExcel(data: ExcelDataItem[]): Promise<string> {
+  const jsonDataPath = join(PATHS.EXTRACTED_DIR, `temp_${Date.now()}.json`);
 
   // 写入临时 JSON 文件
-  await writeFile(jsonDataPath, JSON.stringify(dataWithFilename, null, 2), 'utf-8');
+  await writeFile(jsonDataPath, JSON.stringify(data, null, 2), 'utf-8');
 
-  // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/export_to_excel.py';
-  const { stdout, stderr } = await execAsync(
-    `python3 ${scriptPath} "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
-  );
-
-  if (stderr && !stdout) {
-    throw new Error(`Excel 导出失败: ${stderr}`);
-  }
-
-  // 清理临时 JSON 文件
   try {
-    await unlink(jsonDataPath);
-  } catch (error) {
-    console.error('清理临时 JSON 文件失败:', error);
-  }
+    // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
+    await exportExcel(
+      jsonDataPath,
+      PATHS.TEMPLATE,
+      PATHS.GLOBAL_EXCEL
+    );
 
-  return GLOBAL_EXCEL_PATH;
+    return PATHS.GLOBAL_EXCEL;
+  } finally {
+    // 清理临时 JSON 文件
+    try {
+      await unlink(jsonDataPath);
+    } catch (error) {
+      console.error('清理临时 JSON 文件失败:', error);
+    }
+  }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // 初始化临时目录
+    await initTempDirs();
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -178,43 +67,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未找到文件' }, { status: 400 });
     }
 
+    // 验证文件类型
     if (file.type !== 'application/pdf') {
       return NextResponse.json({ error: '只支持 PDF 文件' }, { status: 400 });
     }
 
-    // 提取并转发请求头
-    const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-
-    // 保存上传的文件到临时目录
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const filename = file.name;
-    const pdfPath = join('/tmp/pdfs', filename);
-
-    await writeFile(pdfPath, buffer);
-
-    // 步骤 1: 解析 PDF
-    const pdfText = await parsePDF(pdfPath);
-
-    // 步骤 2: 提取字段（使用 LLM）
-    const extractedFields = await extractFieldsWithLLM(pdfText);
-
-    // 步骤 3: 导出 Excel（追加到全局 Excel 文件）
-    await exportToExcel([extractedFields], filename);
-
-    // 清理临时 PDF 文件
-    try {
-      await unlink(pdfPath);
-    } catch (error) {
-      console.error('清理临时文件失败:', error);
+    // 验证文件大小
+    if (file.size > FILE_SIZE_LIMIT) {
+      return NextResponse.json(
+        { error: `文件大小超过限制（最大 ${FILE_SIZE_LIMIT / 1024 / 1024}MB）` },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      filename: filename,
-      fields: extractedFields,
-      message: 'PDF 解析成功，字段已提取并追加到全局 Excel 文件'
-    });
+    // 提取并转发请求头（用于 LLM 调用）
+    HeaderUtils.extractForwardHeaders(request.headers);
+
+    // 保存上传的文件到临时目录
+    const filename = file.name;
+    const pdfPath = join(PATHS.PDF_DIR, filename);
+    await saveFile(file, pdfPath);
+
+    try {
+      // 步骤 1: 解析 PDF
+      const pdfText = await parsePDF(pdfPath);
+
+      // 步骤 2: 提取字段（使用 LLM）
+      const extractedFields = await extractFieldsWithLLM(pdfText);
+
+      // 步骤 3: 转换为 Excel 格式
+      const excelData = convertToExcelFormat(extractedFields, filename);
+
+      // 步骤 4: 导出 Excel（追加到全局 Excel 文件）
+      await exportToExcel([excelData]);
+
+      return NextResponse.json({
+        success: true,
+        filename: filename,
+        fields: extractedFields,
+        message: 'PDF 解析成功，字段已提取并追加到全局 Excel 文件'
+      });
+
+    } finally {
+      // 清理临时 PDF 文件
+      await deleteFile(pdfPath);
+    }
 
   } catch (error) {
     console.error('PDF 解析错误:', error);

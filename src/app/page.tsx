@@ -1,3 +1,8 @@
+/**
+ * PDF 字段提取应用主页面
+ * 支持多文件上传、字段提取、Excel 导出、历史记录
+ */
+
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
@@ -9,29 +14,60 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
-interface ExtractedField {
-  fieldName: string;
-  fieldValue: string;
+// 类型定义
+import type { ExtractedField, PDFFile, HistoryRecord } from '@/lib/types';
+
+// 配置
+import { HISTORY_CONFIG, FILE_SIZE_LIMIT } from '@/lib/config/constants';
+import { FIELD_DISPLAY_NAMES } from '@/lib/config/field-mapping';
+
+/**
+ * 格式化文件大小
+ */
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
-interface PDFFile {
-  id: string;
-  name: string;
-  size: number;
-  uploadedAt: Date;
-  extractedFields: ExtractedField[];
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  errorMessage?: string;
+/**
+ * 获取状态徽章
+ */
+function getStatusBadge(status: PDFFile['status']) {
+  switch (status) {
+    case 'pending':
+      return <Badge variant="secondary">待处理</Badge>;
+    case 'processing':
+      return <Badge variant="outline">处理中</Badge>;
+    case 'completed':
+      return <Badge variant="default">已完成</Badge>;
+    case 'error':
+      return <Badge variant="destructive">失败</Badge>;
+  }
 }
 
-interface HistoryRecord {
-  filename: string;
-  uploadTime: string;
-  status: 'completed' | 'error';
+/**
+ * 下载全局 Excel 文件
+ */
+async function downloadGlobalExcel(): Promise<void> {
+  try {
+    const response = await fetch('/api/export-excel');
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'all_data.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('下载 Excel 失败:', error);
+    alert('下载 Excel 文件失败，请稍后重试');
+  }
 }
-
-// 默认字段映射（后续可由用户配置）
-const DEFAULT_FIELDS = ['文档标题', '文档作者', '创建日期', '页数'];
 
 export default function PDFExtractorPage() {
   const [pdfFiles, setPdfFiles] = useState<PDFFile[]>([]);
@@ -41,7 +77,7 @@ export default function PDFExtractorPage() {
 
   // 从 localStorage 加载历史记录
   useEffect(() => {
-    const savedHistory = localStorage.getItem('pdfUploadHistory');
+    const savedHistory = localStorage.getItem(HISTORY_CONFIG.STORAGE_KEY);
     if (savedHistory) {
       try {
         setHistory(JSON.parse(savedHistory));
@@ -52,11 +88,11 @@ export default function PDFExtractorPage() {
   }, []);
 
   // 保存历史记录到 localStorage
-  const saveHistory = (newRecord: HistoryRecord) => {
-    const updatedHistory = [newRecord, ...history].slice(0, 50); // 只保留最近 50 条
+  const saveHistory = useCallback((newRecord: HistoryRecord) => {
+    const updatedHistory = [newRecord, ...history].slice(0, HISTORY_CONFIG.MAX_RECORDS);
     setHistory(updatedHistory);
-    localStorage.setItem('pdfUploadHistory', JSON.stringify(updatedHistory));
-  };
+    localStorage.setItem(HISTORY_CONFIG.STORAGE_KEY, JSON.stringify(updatedHistory));
+  }, [history]);
 
   // 处理文件上传
   const handleFileUpload = useCallback(async (files: FileList | null) => {
@@ -64,8 +100,15 @@ export default function PDFExtractorPage() {
 
     const uploadedFiles = Array.from(files).filter(file => file.type === 'application/pdf');
 
+    // 验证文件大小
+    const validFiles = uploadedFiles.filter(file => file.size <= FILE_SIZE_LIMIT);
+    
+    if (validFiles.length < uploadedFiles.length) {
+      alert(`部分文件超过大小限制（最大 ${FILE_SIZE_LIMIT / 1024 / 1024}MB），已自动跳过`);
+    }
+
     // 创建新的文件对象，状态为 processing
-    const newFiles: PDFFile[] = uploadedFiles.map(file => {
+    const newFiles: PDFFile[] = validFiles.map(file => {
       const existingFile = pdfFiles.find(f => f.name === file.name);
 
       if (existingFile) {
@@ -104,13 +147,13 @@ export default function PDFExtractorPage() {
     });
 
     // 对每个文件调用 API 进行解析
-    for (const file of uploadedFiles) {
+    for (const file of validFiles) {
       await processPDF(file);
     }
-  }, [pdfFiles]);
+  }, [pdfFiles, saveHistory]);
 
   // 处理单个 PDF 文件
-  const processPDF = async (file: File) => {
+  const processPDF = useCallback(async (file: File) => {
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -176,103 +219,63 @@ export default function PDFExtractorPage() {
         status: 'error',
       });
     }
-  };
+  }, [saveHistory]);
 
   // 处理拖拽事件
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
-  };
+  }, []);
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-  };
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     handleFileUpload(e.dataTransfer.files);
-  };
+  }, [handleFileUpload]);
 
   // 删除文件
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     setPdfFiles(prev => prev.filter(f => f.id !== id));
-  };
+  }, []);
 
-  // 格式化文件大小
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-  };
-
-  // 获取状态徽章
-  const getStatusBadge = (status: PDFFile['status']) => {
-    const statusConfig = {
-      pending: { label: '待处理', variant: 'secondary' as const },
-      processing: { label: '处理中', variant: 'default' as const },
-      completed: { label: '已完成', variant: 'outline' as const },
-      error: { label: '失败', variant: 'destructive' as const },
-    };
-    
-    const config = statusConfig[status];
-    return <Badge variant={config.variant}>{config.label}</Badge>;
-  };
-
-  // 下载全局 Excel 文件
-  const downloadGlobalExcel = async () => {
-    try {
-      const response = await fetch('/api/export-excel');
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || '下载失败');
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `all_data_${Date.now()}.xlsx`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('下载 Excel 失败:', error);
-      alert('下载 Excel 失败: ' + (error instanceof Error ? error.message : String(error)));
+  // 清空所有文件
+  const handleClearAll = useCallback(() => {
+    if (confirm('确定要清空所有文件吗？')) {
+      setPdfFiles([]);
     }
-  };
+  }, []);
+
+  // 检查是否所有文件都已完成
+  const allCompleted = pdfFiles.length > 0 && pdfFiles.every(f => f.status === 'completed');
+  const hasProcessing = pdfFiles.some(f => f.status === 'processing');
+  const hasErrors = pdfFiles.some(f => f.status === 'error');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* 标题区域 */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
-            PDF 字段提取与 Excel 合并
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-8 px-4">
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* 页面标题 */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-50 mb-2">
+            PDF 字段提取器
           </h1>
-          <p className="text-muted-foreground text-sm md:text-base">
-            上传PDF文件，自动提取业务字段并合并到同一个 Excel 表格
+          <p className="text-muted-foreground">
+            上传 PDF 文件，自动提取业务字段并导出到 Excel
           </p>
         </div>
 
         {/* 上传区域 */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5" />
-              上传PDF文件
-            </CardTitle>
-            <CardDescription>
-              支持单个或多个PDF文件上传，所有数据将自动合并到同一个 Excel 表格中
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <div
-              className={`border-2 border-dashed rounded-lg p-12 text-center transition-all cursor-pointer ${
+              className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
                 isDragging
                   ? 'border-primary bg-primary/5'
-                  : 'border-slate-300 dark:border-slate-700 hover:border-primary hover:bg-slate-50 dark:hover:bg-slate-900'
+                  : 'border-slate-300 hover:border-slate-400 dark:border-slate-700 dark:hover:border-slate-600'
               }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -292,7 +295,7 @@ export default function PDFExtractorPage() {
                 点击或拖拽文件到此处上传
               </p>
               <p className="text-xs text-muted-foreground">
-                支持PDF格式，可同时选择多个文件
+                支持 PDF 格式，可同时选择多个文件（最大 {FILE_SIZE_LIMIT / 1024 / 1024}MB）
               </p>
             </div>
           </CardContent>
@@ -317,7 +320,7 @@ export default function PDFExtractorPage() {
                     variant="outline"
                     size="sm"
                     onClick={downloadGlobalExcel}
-                    disabled={!pdfFiles.every(f => f.status === 'completed')}
+                    disabled={!allCompleted || hasProcessing}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     下载全局 Excel
@@ -374,6 +377,16 @@ export default function PDFExtractorPage() {
                       </div>
                     </DialogContent>
                   </Dialog>
+                  {pdfFiles.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleClearAll}
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      清空
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -426,8 +439,12 @@ export default function PDFExtractorPage() {
                           <TableBody>
                             {file.extractedFields.map((field, index) => (
                               <TableRow key={index}>
-                                <TableCell className="font-medium">{field.fieldName}</TableCell>
-                                <TableCell className="max-w-md truncate">{field.fieldValue || '-'}</TableCell>
+                                <TableCell className="font-medium">
+                                  {FIELD_DISPLAY_NAMES[field.fieldName] || field.fieldName}
+                                </TableCell>
+                                <TableCell className="max-w-md truncate">
+                                  {field.fieldValue || '-'}
+                                </TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -437,7 +454,7 @@ export default function PDFExtractorPage() {
 
                     {file.status === 'processing' && (
                       <Alert>
-                        <RefreshCw className="h-4 w-4" />
+                        <RefreshCw className="h-4 w-4 animate-spin" />
                         <AlertDescription className="text-xs">
                           正在解析 PDF 并提取字段...
                         </AlertDescription>
@@ -460,7 +477,7 @@ export default function PDFExtractorPage() {
                   还没有上传任何文件
                 </p>
                 <p className="text-xs mt-2">
-                  上传PDF文件后，系统将自动提取字段并合并到全局 Excel 文件
+                  上传 PDF 文件后，系统将自动提取字段并合并到全局 Excel 文件
                 </p>
               </div>
             </CardContent>
