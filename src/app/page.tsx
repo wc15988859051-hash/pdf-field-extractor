@@ -40,6 +40,59 @@ export default function PDFExtractorPage() {
   const [pdfFiles, setPdfFiles] = useState<PDFFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
+  // 解析PDF文件并提取字段
+  const parsePDFFile = async (file: File, fileId: string) => {
+    try {
+      // 更新状态为处理中
+      setPdfFiles(prev => 
+        prev.map(f => 
+          f.id === fileId ? { ...f, status: 'processing' } : f
+        )
+      );
+
+      // 准备表单数据
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // 调用API
+      const response = await fetch('/api/pdf/parse', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'PDF解析失败');
+      }
+
+      // 更新字段数据
+      setPdfFiles(prev =>
+        prev.map(f =>
+          f.id === fileId
+            ? {
+                ...f,
+                status: 'completed',
+                fieldData: result.mappedFields,
+              }
+            : f
+        )
+      );
+    } catch (error) {
+      console.error('PDF解析错误:', error);
+      setPdfFiles(prev =>
+        prev.map(f =>
+          f.id === fileId
+            ? {
+                ...f,
+                status: 'error',
+              }
+            : f
+        )
+      );
+    }
+  };
+
   // 处理文件上传
   const handleFileUpload = useCallback((files: FileList | null) => {
     if (!files) return;
@@ -52,6 +105,9 @@ export default function PDFExtractorPage() {
 
         if (existingFile) {
           // 覆盖现有文件
+          const fileId = existingFile.id;
+          // 触发重新解析
+          setTimeout(() => parsePDFFile(file, fileId), 100);
           return {
             ...existingFile,
             size: file.size,
@@ -61,8 +117,12 @@ export default function PDFExtractorPage() {
           };
         }
 
+        const fileId = `${file.name}-${Date.now()}`;
+        // 触发解析
+        setTimeout(() => parsePDFFile(file, fileId), 100);
+
         return {
-          id: `${file.name}-${Date.now()}`,
+          id: fileId,
           name: file.name,
           size: file.size,
           uploadedAt: new Date(),
@@ -361,12 +421,13 @@ export default function PDFExtractorPage() {
           </Card>
         )}
 
-        {/* 业务逻辑提示 */}
+        {/* 功能说明 */}
         <Alert>
           <RefreshCw className="h-4 w-4" />
           <AlertDescription className="text-sm">
-            表格已按照模板结构生成。详细的PDF解析和字段提取业务逻辑（如何从PDF中提取对应字段）将在后续提供。
-            当前页面已完成文件上传、列表展示和模板表格渲染功能。
+            <strong>功能说明：</strong>上传PDF文件后，系统会自动解析并提取以下字段：
+            Article、Order Reference、Colour Name、GBP Retail Price、Collection、Design Number、Ex Port Date、Total、Unit Price、Line Value、Product Name。
+            提取的字段会自动映射到表格的对应标识符位置。相同名称的文件会覆盖原有内容。
           </AlertDescription>
         </Alert>
       </div>
