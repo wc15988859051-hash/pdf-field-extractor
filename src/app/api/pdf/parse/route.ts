@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as pdfjs from 'pdfjs-dist';
 
-// 动态导入pdf-parse
-const pdfParseLib = require('pdf-parse');
-const pdfParse = pdfParseLib.PDFParse;
+// 设置worker路径
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // 字段映射关系
 const FIELD_MAPPING = {
@@ -118,6 +118,33 @@ function extractFieldsWithBackup(text: string): Record<string, string> {
   return extractedFields;
 }
 
+// 提取PDF文本内容
+async function extractPDFText(buffer: Buffer): Promise<string> {
+  // 加载PDF文档
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+  });
+  
+  const pdf = await loadingTask.promise;
+  
+  // 提取所有页面的文本
+  let fullText = '';
+  
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    
+    // 提取文本项
+    const pageText = textContent.items
+      .map((item: any) => item.str || '')
+      .join(' ');
+    
+    fullText += pageText + '\n';
+  }
+  
+  return fullText;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // 获取表单数据
@@ -143,9 +170,8 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // 解析PDF
-    const data = await pdfParse(buffer);
-    const pdfText = data.text;
+    // 提取PDF文本
+    const pdfText = await extractPDFText(buffer);
 
     // 提取字段
     const extractedPDFFields = extractFieldsFromPDF(pdfText);
