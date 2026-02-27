@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
+import { writeFile, unlink, readFile, mkdir, chmod } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec } from 'child_process';
@@ -56,10 +56,13 @@ async function parsePDF(filePath: string): Promise<string> {
   const pythonPath = await checkPythonAvailable();
 
   const scriptPath = join(PROJECT_ROOT, 'public', 'scripts', 'parse_pdf.py');
+  console.log('=== PDF 解析开始 ===');
   console.log('PDF 解析脚本路径:', scriptPath);
   console.log('PDF 文件路径:', filePath);
   console.log('工作目录:', PROJECT_ROOT);
+  console.log('Python 路径:', pythonPath);
   console.log('脚本文件是否存在:', existsSync(scriptPath));
+  console.log('PDF 文件是否存在:', existsSync(filePath));
 
   if (!existsSync(scriptPath)) {
     throw new Error(`PDF 解析脚本不存在: ${scriptPath}`);
@@ -69,8 +72,32 @@ async function parsePDF(filePath: string): Promise<string> {
     throw new Error(`PDF 文件不存在: ${filePath}`);
   }
 
+  // 列出 public 目录内容
   try {
-    const { stdout, stderr } = await execAsync(`"${pythonPath}" "${scriptPath}" "${filePath}"`);
+    const publicDir = join(PROJECT_ROOT, 'public');
+    const { stdout: lsOutput } = await execAsync(`ls -la "${publicDir}/scripts/" 2>&1`);
+    console.log('public/scripts 目录内容:', lsOutput);
+  } catch (error) {
+    console.error('列出目录内容失败:', error);
+  }
+
+  // 检查脚本文件权限
+  try {
+    const { stdout: statOutput } = await execAsync(`stat "${scriptPath}" 2>&1`);
+    console.log('脚本文件信息:', statOutput);
+  } catch (error) {
+    console.error('获取脚本文件信息失败:', error);
+  }
+
+  try {
+    const command = `"${pythonPath}" "${scriptPath}" "${filePath}"`;
+    console.log('执行命令:', command);
+
+    const { stdout, stderr } = await execAsync(command);
+
+    console.log('Python 脚本返回成功');
+    console.log('stdout 长度:', stdout?.length || 0);
+    console.log('stderr:', stderr);
 
     // 如果有错误输出，记录并抛出异常
     if (stderr) {
@@ -83,9 +110,19 @@ async function parsePDF(filePath: string): Promise<string> {
       throw new Error('PDF 解析失败: 脚本没有输出任何内容');
     }
 
+    console.log('PDF 解析完成，文本长度:', stdout.length);
     return stdout;
   } catch (error: any) {
-    console.error('PDF 解析命令执行失败:', error);
+    console.error('=== PDF 解析命令执行失败 ===');
+    console.error('错误对象:', error);
+    console.error('错误消息:', error.message);
+    console.error('错误代码:', error.code);
+    console.error('错误信号:', error.signal);
+    console.error('stderr:', error.stderr);
+    console.error('stdout:', error.stdout);
+    console.error('堆栈:', error.stack);
+    console.error('=== 错误信息结束 ===');
+
     // 提取详细的错误信息
     const errorMessage = error.stderr || error.stdout || error.message || String(error);
     throw new Error(`PDF 解析失败: ${errorMessage}`);
@@ -260,6 +297,12 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
 }
 
 export async function POST(request: NextRequest) {
+  console.log('=== PDF 解析 API 开始 ===');
+  console.log('时间:', new Date().toISOString());
+  console.log('工作目录:', process.cwd());
+  console.log('Node 版本:', process.version);
+  console.log('环境变量 NODE_ENV:', process.env.NODE_ENV);
+
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
@@ -271,6 +314,8 @@ export async function POST(request: NextRequest) {
     if (file.type !== 'application/pdf') {
       return NextResponse.json({ error: '只支持 PDF 文件' }, { status: 400 });
     }
+
+    console.log('接收到文件:', file.name, '大小:', file.size, '类型:', file.type);
 
     // 提取并转发请求头
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
@@ -289,6 +334,15 @@ export async function POST(request: NextRequest) {
 
     console.log('保存 PDF 文件:', pdfPath);
     await writeFile(pdfPath, buffer);
+
+    // 确保文件可读
+    try {
+      await chmod(pdfPath, 0o644);
+      console.log('PDF 文件权限设置成功');
+    } catch (error) {
+      console.error('设置 PDF 文件权限失败:', error);
+    }
+
     console.log('PDF 文件保存成功');
 
     // 步骤 1: 解析 PDF
