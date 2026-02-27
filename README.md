@@ -2,18 +2,7 @@
 
 这是一个基于 [Next.js 16](https://nextjs.org) + [shadcn/ui](https://ui.shadcn.com) 的全栈应用项目，由扣子编程 CLI 创建。
 
-## 应用功能：PDF 字段提取器
-
-本项目是一个 **PDF 字段提取器** Web 应用，主要功能包括：
-
-- **PDF 解析**: 使用 PyMuPDF 解析 PDF 文件，提取文本和表格数据
-- **智能字段提取**: 集成 LLM（doubao-seed-1-8-251228）自动提取业务字段
-- **Excel 导出**: 支持多文件数据合并到同一个 Excel 文件
-- **字段映射**: 自动添加字段前缀（PO#、style code#、color code#、GBP）
-- **金额格式化**: 自动格式化为美元格式（$X,XXX.XX）
-- **历史记录**: 保存上传历史，方便追溯
-
-### 快速开始
+## 快速开始
 
 ### 启动开发服务器
 
@@ -42,35 +31,19 @@ coze start
 ```
 src/
 ├── app/                      # Next.js App Router 目录
-│   ├── api/                 # API 路由
-│   │   ├── parse-pdf/      # PDF 解析 API
-│   │   └── export-excel/   # Excel 导出 API
-│   ├── layout.tsx          # 根布局组件
-│   ├── page.tsx            # 主页面（PDF 字段提取器）
-│   ├── globals.css         # 全局样式（包含 shadcn 主题变量）
-│   └── [route]/            # 其他路由页面
-├── components/             # React 组件目录
-│   └── ui/                 # shadcn/ui 基础组件（优先使用）
+│   ├── layout.tsx           # 根布局组件
+│   ├── page.tsx             # 首页
+│   ├── globals.css          # 全局样式（包含 shadcn 主题变量）
+│   └── [route]/             # 其他路由页面
+├── components/              # React 组件目录
+│   └── ui/                  # shadcn/ui 基础组件（优先使用）
 │       ├── button.tsx
 │       ├── card.tsx
 │       └── ...
-├── lib/                    # 核心逻辑库（重构后）
-│   ├── config/            # 配置文件
-│   │   ├── constants.ts  # 常量配置
-│   │   └── field-mapping.ts  # 字段映射
-│   ├── python/            # Python 脚本
-│   │   ├── pdf-parser.py
-│   │   └── excel-exporter.py
-│   ├── types/             # TypeScript 类型定义
-│   │   └── index.ts
-│   └── utils/             # 工具函数
-│       ├── llm-helper.ts
-│       ├── file-helper.ts
-│       └── python-helper.ts
-└── hooks/                  # 自定义 React Hooks（可选）
+├── lib/                     # 工具函数库
+│   └── utils.ts            # cn() 等工具函数
+└── hooks/                   # 自定义 React Hooks（可选）
 ```
-
-详细的文档请参考 [README_REFACTOR.md](./README_REFACTOR.md)
 
 ## 核心开发规范
 

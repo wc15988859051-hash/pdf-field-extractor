@@ -1,19 +1,15 @@
-/**
- * Excel 导出 API 路由
- * 提供全局 Excel 文件下载
- */
-
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import { join } from 'path';
 
-// 配置
-import { PATHS } from '@/lib/config/constants';
+// 全局 Excel 文件路径
+const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
 export async function GET(request: NextRequest) {
   try {
     // 检查 Excel 文件是否存在
-    const exists = existsSync(PATHS.GLOBAL_EXCEL);
+    const exists = existsSync(GLOBAL_EXCEL_PATH);
 
     if (!exists) {
       return NextResponse.json(
@@ -23,7 +19,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 读取 Excel 文件
-    const buffer = await readFile(PATHS.GLOBAL_EXCEL);
+    const buffer = await readFile(GLOBAL_EXCEL_PATH);
 
     // 返回文件
     return new NextResponse(buffer, {
