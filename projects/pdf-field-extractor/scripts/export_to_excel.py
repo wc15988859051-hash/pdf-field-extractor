@@ -179,13 +179,6 @@ def fill_data_to_sheet(ws: openpyxl.worksheet.worksheet.Worksheet, data: List[Di
         sell = str(item.get("sell", ""))
         pdf_name = str(item.get("原PDF名称", ""))
 
-        # 添加前缀
-        po = f"PO#{po}" if po else ""
-        style_code = f"style code#{style_code}" if style_code else ""
-        color_code = f"color code#{color_code}" if color_code else ""
-        sell = f"GBP#{sell}" if sell else ""
-        total = f"¥{total}" if total else ""
-
         # 填充第 1 行（序号 + 主数据）
         ws.cell(row=start_row, column=1, value=seq_num)
         ws.cell(row=start_row, column=2, value=po)
