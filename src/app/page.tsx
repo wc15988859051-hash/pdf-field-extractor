@@ -8,9 +8,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-interface ExtractedField {
-  fieldName: string;
-  fieldValue: string;
+// 表格模板数据结构（严格按照Excel模板）
+const TEMPLATE_COLUMNS = [
+  '序号', 'PO', 'style no', 'style name', 'color', 
+  'unit price', 'quantity', 'amount', 'amount after dicount', 'delivery'
+];
+
+const TEMPLATE_ROWS = [
+  ['1', '$PO', '$style no', '$style name', '$color', '$unit price', '$quantity', '$total', '-', '$Ex-date'],
+  ['', '$style code', '', '', '', '', '', '', '', ''],
+  ['', '$color code', '', '', '', '', '', '', '-', ''],
+  ['', '-', '', '', '', '-', '', '', '', '-'],
+  ['', '$sell', '', '', '', '', '', '', '', '-'],
+];
+
+// 字段数据接口
+interface FieldData {
+  [key: string]: string; // 存储提取的字段值，如 { PO: "PO123", style_no: "ABC-001" }
 }
 
 interface PDFFile {
@@ -18,12 +32,9 @@ interface PDFFile {
   name: string;
   size: number;
   uploadedAt: Date;
-  extractedFields: ExtractedField[];
+  fieldData: FieldData;
   status: 'pending' | 'processing' | 'completed' | 'error';
 }
-
-// 默认字段映射（后续可由用户配置）
-const DEFAULT_FIELDS = ['文档标题', '文档作者', '创建日期', '页数'];
 
 export default function PDFExtractorPage() {
   const [pdfFiles, setPdfFiles] = useState<PDFFile[]>([]);
@@ -46,7 +57,7 @@ export default function PDFExtractorPage() {
             size: file.size,
             uploadedAt: new Date(),
             status: 'pending' as const,
-            extractedFields: [],
+            fieldData: {},
           };
         }
 
@@ -55,7 +66,7 @@ export default function PDFExtractorPage() {
           name: file.name,
           size: file.size,
           uploadedAt: new Date(),
-          extractedFields: [],
+          fieldData: {},
           status: 'pending' as const,
         };
       });
@@ -117,12 +128,52 @@ export default function PDFExtractorPage() {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
-  // 导出结果为JSON（示例功能）
+  // 解析单元格内容
+  const parseCellContent = (cellValue: string, fieldData: FieldData): string => {
+    // 检查是否为标识符（以$开头）
+    if (cellValue.startsWith('$')) {
+      const fieldName = cellValue.substring(1);
+      // 检查是否已提取到该字段的值
+      if (fieldData[fieldName]) {
+        return fieldData[fieldName];
+      }
+      // 返回原始标识符
+      return cellValue;
+    }
+    // 返回原始值（包括"-"或空字符串）
+    return cellValue;
+  };
+
+  // 渲染单元格
+  const renderCell = (cellValue: string, fieldData: FieldData) => {
+    const isEmpty = !cellValue || cellValue === '-';
+    const isIdentifier = cellValue.startsWith('$');
+    const fieldName = isIdentifier ? cellValue.substring(1) : null;
+    const hasValue = fieldName && fieldData[fieldName];
+
+    return (
+      <TableCell className={`text-sm ${isEmpty ? 'text-muted-foreground/50' : ''}`}>
+        {isEmpty ? (
+          <span className="text-muted-foreground">-</span>
+        ) : isIdentifier && !hasValue ? (
+          <code className="px-2 py-1 bg-primary/10 text-primary rounded text-xs font-mono">
+            {cellValue}
+          </code>
+        ) : (
+          <span className={hasValue ? 'font-medium text-foreground' : ''}>
+            {hasValue ? fieldData[fieldName!] : cellValue}
+          </span>
+        )}
+      </TableCell>
+    );
+  };
+
+  // 导出结果为JSON
   const handleExport = () => {
     const exportData = pdfFiles.map(file => ({
       fileName: file.name,
       uploadedAt: file.uploadedAt.toISOString(),
-      fields: file.extractedFields,
+      fieldData: file.fieldData,
     }));
     
     const blob = new Blob([JSON.stringify(exportData, null, 2)], {
@@ -146,7 +197,7 @@ export default function PDFExtractorPage() {
             PDF 文件解析与字段提取
           </h1>
           <p className="text-muted-foreground text-sm md:text-base">
-            上传PDF文件，自动提取并映射字段内容
+            上传PDF文件，按照模板提取并映射字段内容
           </p>
         </div>
 
@@ -218,13 +269,14 @@ export default function PDFExtractorPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {pdfFiles.map((file) => (
                   <div
                     key={file.id}
-                    className="border rounded-lg p-4 space-y-3 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors"
+                    className="border rounded-lg overflow-hidden hover:shadow-md transition-shadow"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    {/* 文件信息头部 */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/50 border-b">
                       <div className="flex items-start gap-3 flex-1 min-w-0">
                         <FileText className="h-5 w-5 mt-0.5 text-slate-500 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -237,45 +289,53 @@ export default function PDFExtractorPage() {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(file.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(file.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
 
-                    {/* 字段提取结果表格 */}
-                    {file.extractedFields.length > 0 && (
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-[200px]">字段名称</TableHead>
-                              <TableHead>字段内容</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {file.extractedFields.map((field, index) => (
-                              <TableRow key={index}>
-                                <TableCell className="font-medium">{field.fieldName}</TableCell>
-                                <TableCell className="max-w-md truncate">{field.fieldValue}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                    {/* 模板表格 */}
+                    <div className="p-4 overflow-x-auto">
+                      <div className="mb-3">
+                        <h4 className="text-sm font-semibold mb-1">提取结果</h4>
+                        <p className="text-xs text-muted-foreground">
+                          表格中的 <code className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-xs font-mono">$标识符</code> 表示待提取字段，
+                          <span className="text-muted-foreground/70">-</span> 表示无数据
+                        </p>
                       </div>
-                    )}
+                      
+                      <Table className="border">
+                        <TableHeader>
+                          <TableRow className="bg-slate-100 dark:bg-slate-800">
+                            {TEMPLATE_COLUMNS.map((col, index) => (
+                              <TableHead key={index} className="text-xs font-semibold text-foreground whitespace-nowrap">
+                                {col}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {TEMPLATE_ROWS.map((row, rowIndex) => (
+                            <TableRow key={rowIndex}>
+                              {row.map((cell, cellIndex) => renderCell(cell, file.fieldData))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
 
                     {file.status === 'pending' && (
-                      <Alert>
-                        <AlertDescription className="text-xs">
-                          等待提取字段配置和业务逻辑...
-                        </AlertDescription>
-                      </Alert>
+                      <div className="px-4 pb-4">
+                        <Alert>
+                          <AlertDescription className="text-xs">
+                            等待PDF解析和字段提取...
+                          </AlertDescription>
+                        </Alert>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -294,7 +354,7 @@ export default function PDFExtractorPage() {
                   还没有上传任何文件
                 </p>
                 <p className="text-xs mt-2">
-                  上传PDF文件后，将在此处显示提取结果
+                  上传PDF文件后，将按照模板显示提取结果
                 </p>
               </div>
             </CardContent>
@@ -305,7 +365,8 @@ export default function PDFExtractorPage() {
         <Alert>
           <RefreshCw className="h-4 w-4" />
           <AlertDescription className="text-sm">
-            详细的业务逻辑（PDF解析、字段映射规则）将在后续提供。当前页面已完成文件上传和列表展示功能。
+            表格已按照模板结构生成。详细的PDF解析和字段提取业务逻辑（如何从PDF中提取对应字段）将在后续提供。
+            当前页面已完成文件上传、列表展示和模板表格渲染功能。
           </AlertDescription>
         </Alert>
       </div>
