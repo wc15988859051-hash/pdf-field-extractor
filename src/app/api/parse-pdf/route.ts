@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, unlink, readFile } from 'fs/promises';
+import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec } from 'child_process';
@@ -137,8 +137,14 @@ ${pdfText}`;
 
 // 导出 Excel（追加到全局 Excel 文件）
 async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
-  const jsonDataPath = join('/tmp/extracted', `temp_${pdfFilename}_${Date.now()}.json`);
+  const extractedDir = '/tmp/extracted';
+  const jsonDataPath = join(extractedDir, `temp_${pdfFilename}_${Date.now()}.json`);
   const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
+
+  // 确保导出目录存在
+  if (!existsSync(extractedDir)) {
+    await mkdir(extractedDir, { recursive: true });
+  }
 
   // 确保 PDF 文件名在数据中
   const dataWithFilename = data.map(item => ({
@@ -189,7 +195,13 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const filename = file.name;
-    const pdfPath = join('/tmp/pdfs', filename);
+    const pdfDir = '/tmp/pdfs';
+    const pdfPath = join(pdfDir, filename);
+
+    // 确保临时目录存在
+    if (!existsSync(pdfDir)) {
+      await mkdir(pdfDir, { recursive: true });
+    }
 
     await writeFile(pdfPath, buffer);
 
