@@ -30,6 +30,12 @@ interface HistoryRecord {
   status: 'completed' | 'error';
 }
 
+interface HealthCheck {
+  status: string;
+  timestamp: string;
+  checks: Record<string, any>;
+}
+
 // 默认字段映射（后续可由用户配置）
 const DEFAULT_FIELDS = ['文档标题', '文档作者', '创建日期', '页数'];
 
@@ -39,6 +45,9 @@ export default function PDFExtractorPage() {
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [healthStatus, setHealthStatus] = useState<'ok' | 'error' | 'checking'>('checking');
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnosticsData, setDiagnosticsData] = useState<HealthCheck | null>(null);
+  const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
 
   // 检查服务健康状态
   const checkHealth = async () => {
@@ -51,6 +60,22 @@ export default function PDFExtractorPage() {
     } catch (error) {
       setHealthStatus('error');
       console.error('健康检查失败:', error);
+    }
+  };
+
+  // 获取诊断信息
+  const getDiagnostics = async () => {
+    setIsLoadingDiagnostics(true);
+    try {
+      const response = await fetch('/api/test');
+      const data = await response.json();
+      setDiagnosticsData(data);
+      setShowDiagnostics(true);
+    } catch (error) {
+      console.error('获取诊断信息失败:', error);
+      alert('获取诊断信息失败');
+    } finally {
+      setIsLoadingDiagnostics(false);
     }
   };
 
@@ -334,15 +359,45 @@ export default function PDFExtractorPage() {
                 正在检查服务状态...
               </Badge>
             ) : healthStatus === 'ok' ? (
-              <Badge variant="default" className="gap-1">
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-                服务正常
-              </Badge>
+              <>
+                <Badge variant="default" className="gap-1">
+                  <span className="w-2 h-2 rounded-full bg-green-400" />
+                  服务正常
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={getDiagnostics}
+                  disabled={isLoadingDiagnostics}
+                >
+                  {isLoadingDiagnostics ? (
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                  ) : (
+                    '系统诊断'
+                  )}
+                </Button>
+              </>
             ) : (
-              <Badge variant="destructive" className="gap-1">
-                <span className="w-2 h-2 rounded-full bg-red-400" />
-                服务异常 - <Button variant="ghost" size="sm" className="h-4 px-2 -mx-2 -my-1 text-white hover:text-white" onClick={checkHealth}>刷新</Button>
-              </Badge>
+              <>
+                <Badge variant="destructive" className="gap-1">
+                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                  服务异常 - <Button variant="ghost" size="sm" className="h-4 px-2 -mx-2 -my-1 text-white hover:text-white" onClick={checkHealth}>刷新</Button>
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-red-400 hover:text-red-300"
+                  onClick={getDiagnostics}
+                  disabled={isLoadingDiagnostics}
+                >
+                  {isLoadingDiagnostics ? (
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                  ) : (
+                    '系统诊断'
+                  )}
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -558,6 +613,71 @@ export default function PDFExtractorPage() {
           </Card>
         )}
       </div>
+
+      {/* 系统诊断对话框 */}
+      <Dialog open={showDiagnostics} onOpenChange={setShowDiagnostics}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              系统诊断
+            </DialogTitle>
+            <DialogDescription>
+              查看系统各组件的运行状态
+            </DialogDescription>
+          </DialogHeader>
+          {diagnosticsData ? (
+            <div className="space-y-4">
+              {/* 整体状态 */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">整体状态:</span>
+                <Badge variant={diagnosticsData.status === 'healthy' ? 'default' : 'destructive'}>
+                  {diagnosticsData.status === 'healthy' ? '正常' : '异常'}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(diagnosticsData.timestamp).toLocaleString('zh-CN')}
+                </span>
+              </div>
+
+              {/* 详细检查项 */}
+              <div className="space-y-2">
+                {Object.entries(diagnosticsData.checks).map(([key, value]: [string, any]) => (
+                  <div key={key} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      {value.status === 'ok' ? (
+                        <span className="w-2 h-2 rounded-full bg-green-400" />
+                      ) : (
+                        <span className="w-2 h-2 rounded-full bg-red-400" />
+                      )}
+                      <span className="text-sm font-medium">{key}</span>
+                    </div>
+                    <div className="text-right">
+                      <Badge variant={value.status === 'ok' ? 'outline' : 'destructive'}>
+                        {value.status}
+                      </Badge>
+                      {value.version && (
+                        <div className="text-xs text-muted-foreground mt-1">{value.version}</div>
+                      )}
+                      {value.path && (
+                        <div className="text-xs text-muted-foreground mt-1 truncate max-w-[200px]">
+                          {value.path}
+                        </div>
+                      )}
+                      {value.error && (
+                        <div className="text-xs text-destructive mt-1">{value.error}</div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -11,6 +11,37 @@ const execAsync = promisify(exec);
 // 获取项目根目录
 const PROJECT_ROOT = process.cwd();
 
+// 检查并安装 Python 依赖（运行时）
+async function ensurePythonDependencies(): Promise<void> {
+  try {
+    // 检查 PyMuPDF
+    await execAsync('python3 -c "import fitz"');
+    console.log('✓ PyMuPDF 已安装');
+  } catch (error) {
+    console.warn('⚠ PyMuPDF 未安装，正在安装...');
+    try {
+      await execAsync('pip3 install PyMuPDF==1.23.26 --no-cache-dir --quiet');
+      console.log('✓ PyMuPDF 安装成功');
+    } catch (installError) {
+      console.error('✗ PyMuPDF 安装失败:', installError);
+    }
+  }
+
+  try {
+    // 检查 openpyxl
+    await execAsync('python3 -c "import openpyxl"');
+    console.log('✓ openpyxl 已安装');
+  } catch (error) {
+    console.warn('⚠ openpyxl 未安装，正在安装...');
+    try {
+      await execAsync('pip3 install openpyxl==3.1.5 --no-cache-dir --quiet');
+      console.log('✓ openpyxl 安装成功');
+    } catch (installError) {
+      console.error('✗ openpyxl 安装失败:', installError);
+    }
+  }
+}
+
 // 检查 Python 是否可用
 async function checkPythonAvailable(): Promise<string> {
   try {
@@ -192,9 +223,7 @@ async function extractFieldsWithLLM(pdfText: string): Promise<any> {
 重要注意事项：
 1. 必须识别 Total（总额/数量）和 Line Value（行金额/金额值）这两个不同的字段
 2. Total 通常表示数量，Line Value 通常表示金额
-3. 如果字段名称有变体，请根据上下文判断：
-   - Total 可能显示为：Total、Quantity、数量、总数
-   - Line Value 可能显示为：Line Value、Amount、金额、总价、总金额
+3. 如果字段名称有变体，请根据上下文判断
 4. 只返回纯 JSON 格式，不要包含任何其他解释或说明
 5. 如果某个字段在文本中找不到，将其值设为空字符串 ""
 6. 字段名称必须完全匹配上面的列表
@@ -230,93 +259,42 @@ ${pdfText}`;
     console.log('开始调用 LLM...');
     const response = await client.invoke(messages, {
       model: "doubao-seed-1-8-251228",
-      temperature: 0.3, // 使用较低的温度以确保准确性
+      temperature: 0.3,
     });
 
     console.log('LLM 原始返回:', response.content);
-    console.log('LLM 返回长度:', response.content?.length || 0);
-    console.log('LLM 返回类型:', typeof response.content);
 
-    // 检查 LLM 返回是否有效
-    if (!response.content || typeof response.content !== 'string') {
-      console.error('LLM 返回内容无效');
-      throw new Error('LLM 返回内容无效');
-    }
-
-    // 尝试提取 JSON 内容（可能 LLM 返回的内容包含了额外的文本）
-    let jsonContent = response.content.trim();
-
-    // 尝试找到 JSON 对象的开始和结束
-    const jsonStart = jsonContent.indexOf('{');
-    const jsonEnd = jsonContent.lastIndexOf('}');
-
-    if (jsonStart >= 0 && jsonEnd > jsonStart) {
-      jsonContent = jsonContent.substring(jsonStart, jsonEnd + 1);
-      console.log('提取的 JSON 内容:', jsonContent);
-    }
-
-    // 解析 LLM 返回的 JSON
+    // 简化 JSON 解析
     let extractedFields;
     try {
-      extractedFields = JSON.parse(jsonContent);
+      // 尝试直接解析
+      extractedFields = JSON.parse(response.content);
     } catch (parseError) {
-      console.error('JSON 解析失败:', parseError);
-      console.error('原始内容:', response.content);
-      console.error('尝试解析的内容:', jsonContent);
-      throw new Error(`LLM 返回的不是有效的 JSON 格式: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+      // 如果失败，尝试提取 JSON 部分
+      const match = response.content.match(/\{[\s\S]*\}/);
+      if (match) {
+        extractedFields = JSON.parse(match[0]);
+      } else {
+        throw new Error('无法解析 LLM 返回的 JSON');
+      }
     }
-
-    console.log('解析后的字段:', JSON.stringify(extractedFields, null, 2));
 
     // 确保所有必需字段都存在
     const fields: any = {};
     for (const field of REQUIRED_FIELDS) {
       fields[field] = extractedFields[field] || '';
-      if (!fields[field]) {
-        console.warn(`警告: 字段 ${field} 提取为空`);
-      }
     }
 
     return fields;
   } catch (error) {
-    console.error('=== LLM 字段提取失败，使用降级方案 ===');
-    console.error('错误类型:', error?.constructor?.name);
-    console.error('错误消息:', error instanceof Error ? error.message : String(error));
-    console.error('错误堆栈:', error instanceof Error ? error.stack : 'N/A');
-
-    // 检查是否是网络错误或 API 错误
-    if (error && typeof error === 'object') {
-      if ('code' in error) {
-        console.error('错误代码:', (error as any).code);
-      }
-      if ('status' in error) {
-        console.error('HTTP 状态:', (error as any).status);
-      }
-    }
-    console.error('=== LLM 错误结束 ===');
-
-    // 使用降级方案（正则表达式）
-    console.warn('LLM 提取失败，使用正则表达式降级方案');
-    try {
-      return extractFieldsWithRegex(pdfText);
-    } catch (fallbackError) {
-      console.error('降级方案也失败:', fallbackError);
-      // 如果降级方案也失败，返回空对象
-      console.warn('降级方案也失败，返回空字段对象');
-      const fields: any = {};
-      for (const field of REQUIRED_FIELDS) {
-        fields[field] = '';
-      }
-      return fields;
-    }
+    console.error('LLM 字段提取失败，使用降级方案:', error);
+    // 使用降级方案
+    return extractFieldsWithRegex(pdfText);
   }
 }
 
 // 导出 Excel（追加到全局 Excel 文件）
-async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
-  // 先检查 Python 是否可用
-  const pythonPath = await checkPythonAvailable();
-
+async function exportToExcel(data: any[], pdfFilename: string): Promise<void> {
   const extractedDir = '/tmp/extracted';
   const jsonDataPath = join(extractedDir, `temp_${pdfFilename}_${Date.now()}.json`);
   const templatePath = join(PROJECT_ROOT, 'public', 'assets', 'template.xlsx');
@@ -341,35 +319,23 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
   console.log('临时 JSON 文件路径:', jsonDataPath);
   console.log('模板文件路径:', templatePath);
   console.log('输出 Excel 文件路径:', GLOBAL_EXCEL_PATH);
-  console.log('脚本文件是否存在:', existsSync(scriptPath));
-
-  if (!existsSync(scriptPath)) {
-    throw new Error(`Excel 导出脚本不存在: ${scriptPath}`);
-  }
-
-  if (!existsSync(templatePath)) {
-    throw new Error(`Excel 模板文件不存在: ${templatePath}`);
-  }
 
   try {
+    const pythonPath = await checkPythonAvailable();
     const { stdout, stderr } = await execAsync(
       `"${pythonPath}" "${scriptPath}" "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
     );
 
-    // 如果有错误输出，记录并抛出异常
     if (stderr) {
-      console.error('Excel 导出脚本 stderr:', stderr);
-      throw new Error(`Excel 导出失败: ${stderr}`);
+      console.warn('Excel 导出脚本 stderr:', stderr);
     }
 
-    if (!stdout) {
-      console.warn('Excel 导出脚本没有输出');
+    if (stdout) {
+      console.log('Excel 导出脚本输出:', stdout);
     }
   } catch (error: any) {
-    console.error('Excel 导出命令执行失败:', error);
-    // 提取详细的错误信息
-    const errorMessage = error.stderr || error.stdout || error.message || String(error);
-    throw new Error(`Excel 导出失败: ${errorMessage}`);
+    console.error('Excel 导出失败:', error);
+    throw new Error(`Excel 导出失败: ${error.message || String(error)}`);
   }
 
   // 清理临时 JSON 文件
@@ -378,8 +344,6 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
   } catch (error) {
     console.error('清理临时 JSON 文件失败:', error);
   }
-
-  return GLOBAL_EXCEL_PATH;
 }
 
 export async function POST(request: NextRequest) {
@@ -388,6 +352,11 @@ export async function POST(request: NextRequest) {
   console.log('工作目录:', process.cwd());
   console.log('Node 版本:', process.version);
   console.log('环境变量 NODE_ENV:', process.env.NODE_ENV);
+
+  // 确保已安装 Python 依赖
+  console.log('检查 Python 依赖...');
+  await ensurePythonDependencies();
+  console.log('Python 依赖检查完成');
 
   try {
     const formData = await request.formData();
