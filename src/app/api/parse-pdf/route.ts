@@ -4,7 +4,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { LLMClient, Config } from 'coze-coding-dev-sdk';
 
 const execAsync = promisify(exec);
 
@@ -129,6 +129,42 @@ async function parsePDF(filePath: string): Promise<string> {
   }
 }
 
+// 使用正则表达式作为 LLM 的降级方案
+function extractFieldsWithRegex(pdfText: string): any {
+  console.log('使用正则表达式降级方案提取字段');
+
+  const fields: any = {};
+  const fieldPatterns = [
+    { name: 'Article', patterns: [/Article\s*[:：]\s*([^\n\r]+)/i, /Article\s*:?\s*([^\s\n]+)/i] },
+    { name: 'Order Reference', patterns: [/Order\s*Reference\s*[:：]\s*([^\n\r]+)/i, /Order\s*Ref\s*[:：]\s*([^\n\r]+)/i, /PO\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Colour Name', patterns: [/Colour\s*Name\s*[:：]\s*([^\n\r]+)/i, /Color\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'GBP Retail Price', patterns: [/GBP\s*Retail\s*Price\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Collection', patterns: [/Collection\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Design Number', patterns: [/Design\s*Number\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Ex Port Date', patterns: [/Ex\s*Port\s*Date\s*[:：]\s*([^\n\r]+)/i, /Ex-date\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Total', patterns: [/Total\s*[:：]\s*([^\n\r]+)/i, /Quantity\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Unit Price', patterns: [/Unit\s*Price\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Line Value', patterns: [/Line\s*Value\s*[:：]\s*([^\n\r]+)/i, /Amount\s*[:：]\s*([^\n\r]+)/i] },
+    { name: 'Product Name', patterns: [/Product\s*Name\s*[:：]\s*([^\n\r]+)/i] },
+  ];
+
+  for (const field of fieldPatterns) {
+    for (const pattern of field.patterns) {
+      const match = pdfText.match(pattern);
+      if (match && match[1]) {
+        fields[field.name] = match[1].trim();
+        break;
+      }
+    }
+    if (!fields[field.name]) {
+      fields[field.name] = '';
+    }
+  }
+
+  console.log('正则表达式提取结果:', fields);
+  return fields;
+}
+
 // 使用 LLM 提取字段
 async function extractFieldsWithLLM(pdfText: string): Promise<any> {
   try {
@@ -243,7 +279,7 @@ ${pdfText}`;
 
     return fields;
   } catch (error) {
-    console.error('=== LLM 字段提取失败 ===');
+    console.error('=== LLM 字段提取失败，使用降级方案 ===');
     console.error('错误类型:', error?.constructor?.name);
     console.error('错误消息:', error instanceof Error ? error.message : String(error));
     console.error('错误堆栈:', error instanceof Error ? error.stack : 'N/A');
@@ -259,13 +295,20 @@ ${pdfText}`;
     }
     console.error('=== LLM 错误结束 ===');
 
-    // 如果 LLM 失败，返回空对象
-    console.warn('LLM 提取失败，返回空字段对象');
-    const fields: any = {};
-    for (const field of REQUIRED_FIELDS) {
-      fields[field] = '';
+    // 使用降级方案（正则表达式）
+    console.warn('LLM 提取失败，使用正则表达式降级方案');
+    try {
+      return extractFieldsWithRegex(pdfText);
+    } catch (fallbackError) {
+      console.error('降级方案也失败:', fallbackError);
+      // 如果降级方案也失败，返回空对象
+      console.warn('降级方案也失败，返回空字段对象');
+      const fields: any = {};
+      for (const field of REQUIRED_FIELDS) {
+        fields[field] = '';
+      }
+      return fields;
     }
-    return fields;
   }
 }
 
@@ -359,9 +402,6 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('接收到文件:', file.name, '大小:', file.size, '类型:', file.type);
-
-    // 提取并转发请求头
-    const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
 
     // 保存上传的文件到临时目录
     const bytes = await file.arrayBuffer();
