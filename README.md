@@ -200,6 +200,69 @@ import { cn } from '@/lib/utils';
 </div>
 ```
 
+## 部署
+
+### 本地开发
+
+使用 Coze CLI 启动开发服务器：
+
+```bash
+coze dev
+```
+
+### Docker 部署（推荐 - 极空间）
+
+本项目支持通过 Docker 部署到极空间 NAS。
+
+#### 快速开始
+
+1. **克隆或下载项目**
+
+```bash
+git clone https://github.com/YOUR_USERNAME/pdf-field-extractor.git
+cd pdf-field-extractor
+```
+
+2. **配置环境变量**
+
+复制并编辑环境变量文件：
+
+```bash
+cp .env.docker .env
+nano .env
+```
+
+填写你的 Coze API 凭据：
+```bash
+COZE_API_KEY=pat_your_api_key_here
+COZE_BASE_URL=https://api.coze.cn
+COZE_BOT_ID=your_bot_id_here
+```
+
+3. **构建并启动容器**
+
+```bash
+docker-compose up -d
+```
+
+4. **访问应用**
+
+浏览器访问：`http://你的IP:5000`
+
+详细部署步骤请查看 [DOCKER_DEPLOYMENT.md](./DOCKER_DEPLOYMENT.md)
+
+#### 极空间 Docker 部署
+
+支持在极空间 Docker 中部署，详细步骤：
+- [DOCKER_DEPLOYMENT.md - 方法一：极空间 Docker 部署](./DOCKER_DEPLOYMENT.md#方法一极空间-docker-部署推荐)
+
+### Vercel 部署
+
+⚠️ **注意**：当前项目使用了 Python 脚本，部署到 Vercel 需要先迁移到 Node.js。
+
+详见 [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)
+```
+
 ## 部署到 Vercel
 
 本项目支持通过 Git 仓库自动部署到 Vercel。
@@ -469,18 +532,30 @@ export const useStore = create<Store>((set) => ({
 - **框架**: Next.js 16.1.1 (App Router)
 - **UI 组件**: shadcn/ui (基于 Radix UI)
 - **样式**: Tailwind CSS v4
-- **表单**: React Hook Form + Zod
 - **图标**: Lucide React
-- **字体**: Geist Sans & Geist Mono
 - **包管理器**: pnpm 9+
 - **TypeScript**: 5.x
+- **PDF 解析**: Python 3.12 + PyMuPDF
+- **Excel 导出**: Python 3.12 + openpyxl
+- **LLM**: doubao-seed-1-8-251228 (coze-coding-dev-sdk)
+- **容器化**: Docker + Docker Compose
+
+## 部署方式
+
+| 方式 | 适用场景 | 推荐度 |
+|------|----------|--------|
+| **Docker** | 极空间 NAS、本地服务器 | ⭐⭐⭐⭐⭐ |
+| **本地开发** | 开发测试 | ⭐⭐⭐⭐⭐ |
+| **Vercel** | 云端部署（需迁移到 Node.js） | ⭐⭐⭐ |
 
 ## 参考文档
 
+- [Docker 部署指南](./DOCKER_DEPLOYMENT.md) - 极空间 Docker 部署
+- [Vercel 部署指南](./VERCEL_DEPLOYMENT.md) - Vercel 部署方案
+- [Git 部署指南](./GIT_AND_VERCEL_DEPLOYMENT.md) - Git 仓库配置
 - [Next.js 官方文档](https://nextjs.org/docs)
 - [shadcn/ui 组件文档](https://ui.shadcn.com)
 - [Tailwind CSS 文档](https://tailwindcss.com/docs)
-- [React Hook Form](https://react-hook-form.com)
 
 ## 重要提示
 
@@ -489,3 +564,4 @@ export const useStore = create<Store>((set) => ({
 3. **遵循 Next.js App Router 规范**，正确区分服务端/客户端组件
 4. **使用 TypeScript** 进行类型安全开发
 5. **使用 `@/` 路径别名** 导入模块（已配置）
+6. **Docker 部署前** 需要配置 `.env` 文件中的 Coze API 凭据

@@ -139,3 +139,15 @@ env/
 pip-log.txt
 pip-delete-this-directory.txt
 .pyenv/
+
+# Docker
+.env
+.env.local
+.env.production
+.env.docker
+
+# Volume mounts
+temp/
+*.db
+*.sqlite
+
