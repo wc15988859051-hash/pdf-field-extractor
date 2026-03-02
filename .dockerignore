@@ -1,0 +1,69 @@
+# ==============================================
+# Docker 构建忽略文件
+# ==============================================
+
+# Node.js 依赖
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Next.js 构建输出
+.next/
+out/
+
+# 开发环境文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 日志文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 测试和覆盖率
+coverage/
+.nyc_output/
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# 文档（可选，根据需要）
+*.md
+!README.md
+
+# 打包文件
+*.tar.gz
+*.zip
+*.rar
+
+# 临时数据目录（这些在容器中会创建）
+/tmp/
+tmp/
+
+# TypeScript 编译输出
+*.tsbuildinfo
+
+# 极空间 NAS 相关
+nas-deploy-package/
