@@ -200,6 +200,42 @@ import { cn } from '@/lib/utils';
 </div>
 ```
 
+## 部署到 Vercel
+
+### 快速部署
+
+1. **安装 Vercel CLI**
+
+```bash
+npm install -g vercel
+```
+
+2. **登录并部署**
+
+```bash
+vercel login
+vercel
+```
+
+3. **配置环境变量**
+
+在 Vercel 项目设置中添加以下环境变量：
+
+```bash
+COZE_API_KEY=your_api_key_here
+COZE_BASE_URL=https://api.coze.com
+COZE_BOT_ID=your_bot_id_here
+```
+
+4. **部署到生产环境**
+
+```bash
+vercel --prod
+```
+
+详细部署指南请查看 [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)
+```
+
 **主题变量**
 
 主题变量定义在 `src/app/globals.css` 中，支持亮色/暗色模式：
