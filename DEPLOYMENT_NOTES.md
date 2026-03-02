@@ -1,33 +1,18 @@
 # 生产环境部署注意事项
 
-## ⚠️ 重要：Python 脚本路径问题
+## ⚠️ 重要：Python 脚本路径问题（已修复）
 
 ### 问题说明
 在部署到 Vercel 或其他平台时，可能会遇到 Python 脚本找不到的问题，因为：
-1. 开发环境的路径是 `/workspace/projects/src/app/api/parse-pdf/scripts/`
-2. 部署环境的路径可能不同
-3. Next.js 在构建时会重排文件结构
+1. 开发环境的工作目录可能是 `/workspace/projects`
+2. 部署环境的工作目录可能是 `/opt/bytefaas` 或其他路径
+3. `src/` 目录下的文件在构建时可能会被处理
 
-### 解决方案
+### 解决方案 ✅
 
-#### 方案 1: 使用相对路径（推荐）✅
+**当前方案：使用 `public/` 目录存储 Python 脚本**
 
-在 `src/app/api/parse-pdf/route.ts` 中，使用 `process.cwd()` 获取工作目录：
-
-```typescript
-// 获取项目根目录
-const PROJECT_ROOT = process.cwd();
-
-// 使用相对路径
-const PARSE_PYTHON_SCRIPT = path.join(PROJECT_ROOT, 'src/app/api/parse-pdf/scripts/parse_pdf.py');
-const EXPORT_PYTHON_SCRIPT = path.join(PROJECT_ROOT, 'src/app/api/parse-pdf/scripts/export_to_excel.py');
-const EXCEL_TEMPLATE_PATH = path.join(PROJECT_ROOT, 'src/app/api/parse-pdf/assets/template.xlsx');
-```
-
-#### 方案 2: 使用静态文件服务
-
-将 Python 脚本和模板文件放到 `public/` 目录：
-
+将 Python 脚本和模板文件放在 `public/scripts/` 目录下：
 ```
 public/
 └── scripts/
@@ -37,14 +22,39 @@ public/
         └── template.xlsx
 ```
 
-然后在代码中使用：
+**优点**：
+- Next.js 会自动复制 `public/` 目录中的文件到构建输出
+- 无论部署环境的工作目录是什么，都能正确访问
+- 文件在构建后保持原路径结构
+
+**代码实现**：
 ```typescript
-const PARSE_PYTHON_SCRIPT = path.join(process.cwd(), 'public/scripts/parse_pdf.py');
+const PROJECT_ROOT = process.cwd();
+const PARSE_PYTHON_SCRIPT = join(PROJECT_ROOT, 'public/scripts/parse_pdf.py');
+const EXPORT_PYTHON_SCRIPT = join(PROJECT_ROOT, 'public/scripts/export_to_excel.py');
+const EXCEL_TEMPLATE_PATH = join(PROJECT_ROOT, 'public/scripts/assets/template.xlsx');
 ```
 
-#### 方案 3: 打包到 `.next` 目录（当前使用）
+### 文件结构说明
 
-当前实现将脚本放在 `src/` 目录下，Next.js 会自动包含这些文件。
+当前项目结构：
+```
+workspace/projects/
+├── public/
+│   └── scripts/              ← Python 脚本（部署时可访问）
+│       ├── parse_pdf.py
+│       ├── export_to_excel.py
+│       └── assets/
+│           └── template.xlsx
+├── src/
+│   └── app/
+│       └── api/
+│           └── parse-pdf/
+│               ├── route.ts
+│               ├── scripts/   ← 备份副本（开发时使用）
+│               └── assets/    ← 备份副本（开发时使用）
+└── ...
+```
 
 ## 验证部署
 
@@ -127,18 +137,37 @@ Vercel 不支持运行 Python 脚本，因此需要使用：
 
 ## 部署检查清单
 
+### 前置环境
 - [ ] Python 3.12 已安装
 - [ ] PyMuPDF==1.23.26 已安装
 - [ ] openpyxl==3.1.5 已安装
 - [ ] Node.js 18+ 已安装
 - [ ] pnpm 已安装
-- [ ] Python 脚本路径正确
+
+### 文件结构
+- [ ] `public/scripts/parse_pdf.py` 存在
+- [ ] `public/scripts/export_to_excel.py` 存在
+- [ ] `public/scripts/assets/template.xlsx` 存在
+- [ ] Python 脚本有执行权限（`chmod +x`）
+
+### 运行环境
+- [ ] Python 脚本路径正确（使用 `process.cwd()` 动态获取）
 - [ ] 模板文件存在
 - [ ] /tmp 目录可写
+- [ ] /tmp/pdfs 目录可创建
+- [ ] /tmp/extracted 目录可创建
+
+### 服务器配置
 - [ ] 防火墙配置正确
 - [ ] Nginx 配置正确
 - [ ] SSL 证书已配置
 - [ ] PM2 已配置
+
+### 部署后验证
+- [ ] 测试上传 PDF 文件
+- [ ] 验证字段提取功能
+- [ ] 验证 Excel 导出功能
+- [ ] 检查日志无错误
 
 ## 紧急修复方案
 
@@ -149,17 +178,36 @@ Vercel 不支持运行 Python 脚本，因此需要使用：
 const PARSE_PYTHON_SCRIPT = process.env.PARSE_PYTHON_SCRIPT || '/path/to/script.py';
 ```
 
-2. **手动调整路径**
+2. **检查实际工作目录**
 ```bash
-# 查看实际文件位置
-find / -name "parse_pdf.py"
-
-# 更新代码中的路径
+# 在部署环境中执行
+echo $PWD
+node -e "console.log(process.cwd())"
 ```
 
-3. **使用符号链接**
+3. **验证脚本位置**
 ```bash
-ln -s /actual/path/to/scripts /workspace/projects/scripts
+# 查找 Python 脚本
+find $(process.cwd) -name "parse_pdf.py"
+
+# 检查 public 目录
+ls -la $(process.cwd)/public/scripts/
+```
+
+4. **手动调整路径**
+```bash
+# 如果脚本不在预期位置，复制到 public/scripts
+mkdir -p /path/to/project/public/scripts
+cp /path/to/original/scripts/*.py /path/to/project/public/scripts/
+cp /path/to/original/assets/*.xlsx /path/to/project/public/scripts/assets/
+
+# 添加执行权限
+chmod +x /path/to/project/public/scripts/*.py
+```
+
+5. **使用符号链接（临时方案）**
+```bash
+ln -s /actual/path/to/scripts /path/to/project/public/scripts
 ```
 
 ## 联系支持

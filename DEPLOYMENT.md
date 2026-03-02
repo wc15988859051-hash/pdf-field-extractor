@@ -13,27 +13,52 @@
 
 ## 部署前检查清单
 
-### 1. 确保文件结构正确
-以下文件必须存在于项目中：
-```
-src/app/api/parse-pdf/
-├── route.ts
-├── scripts/
-│   ├── parse_pdf.py
-│   └── export_to_excel.py
-└── assets/
-    └── template.xlsx
+### 1. 运行部署配置脚本（重要）
+在部署前，运行配置脚本确保 Python 脚本位于正确位置：
+```bash
+# 在项目根目录执行
+./scripts/setup-deploy.sh
+
+# 或指定项目路径
+./scripts/setup-deploy.sh /path/to/project
 ```
 
-### 2. 安装 Python 依赖
+这个脚本会：
+- 检查项目结构
+- 将 Python 脚本从 `src/` 目录复制到 `public/scripts/` 目录
+- 将模板文件复制到 `public/scripts/assets/` 目录
+- 添加执行权限
+- 验证文件完整性
+
+### 2. 验证文件结构
+确保以下文件存在：
+```
+public/
+└── scripts/
+    ├── parse_pdf.py          ← Python 解析脚本
+    ├── export_to_excel.py    ← Python 导出脚本
+    └── assets/
+        └── template.xlsx     ← Excel 模板
+```
+
+### 3. 安装 Python 依赖
 ```bash
 pip3 install PyMuPDF==1.23.26 openpyxl==3.1.5
 ```
 
-### 3. 验证 Python 脚本可执行
+### 4. 验证 Python 脚本可执行
 ```bash
-python3 src/app/api/parse-pdf/scripts/parse_pdf.py --help
-python3 src/app/api/parse-pdf/scripts/export_to_excel.py --help
+python3 public/scripts/parse_pdf.py --help
+python3 public/scripts/export_to_excel.py --help
+```
+
+### 5. 本地构建测试
+```bash
+# 构建生产版本
+pnpm run build
+
+# 检查构建输出
+ls -la .next/static/scripts/  # 应该包含 Python 脚本
 ```
 
 ## 部署到 Vercel

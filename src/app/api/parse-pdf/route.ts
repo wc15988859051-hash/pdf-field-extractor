@@ -22,15 +22,20 @@ const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 // PDF 临时文件目录
 const PDF_TEMP_DIR = '/tmp/pdfs';
 
-// Python 脚本路径（使用相对路径，兼容部署环境）
-const PARSE_PYTHON_SCRIPT = join(PROJECT_ROOT, 'src/app/api/parse-pdf/scripts/parse_pdf.py');
-const EXPORT_PYTHON_SCRIPT = join(PROJECT_ROOT, 'src/app/api/parse-pdf/scripts/export_to_excel.py');
-const EXCEL_TEMPLATE_PATH = join(PROJECT_ROOT, 'src/app/api/parse-pdf/assets/template.xlsx');
+// Python 脚本路径（使用 public 目录，确保部署时可访问）
+const PARSE_PYTHON_SCRIPT = join(PROJECT_ROOT, 'public/scripts/parse_pdf.py');
+const EXPORT_PYTHON_SCRIPT = join(PROJECT_ROOT, 'public/scripts/export_to_excel.py');
+const EXCEL_TEMPLATE_PATH = join(PROJECT_ROOT, 'public/scripts/assets/template.xlsx');
 
 console.log('项目根目录:', PROJECT_ROOT);
 console.log('Python 解析脚本路径:', PARSE_PYTHON_SCRIPT);
 console.log('Python 导出脚本路径:', EXPORT_PYTHON_SCRIPT);
 console.log('Excel 模板路径:', EXCEL_TEMPLATE_PATH);
+console.log('脚本存在检查:', {
+  parse_pdf: existsSync(PARSE_PYTHON_SCRIPT),
+  export_to_excel: existsSync(EXPORT_PYTHON_SCRIPT),
+  template: existsSync(EXCEL_TEMPLATE_PATH)
+});
 
 // 需要提取的字段列表
 const REQUIRED_FIELDS = [
