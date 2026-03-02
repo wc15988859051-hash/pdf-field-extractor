@@ -202,6 +202,103 @@ import { cn } from '@/lib/utils';
 
 ## 部署到 Vercel
 
+本项目支持通过 Git 仓库自动部署到 Vercel。
+
+### 方案选择
+
+⚠️ **重要提示**：当前项目使用了 Python 脚本，需要先迁移到 Node.js 才能在 Vercel 上部署。
+
+**推荐方案：迁移到 Node.js**
+- 使用 `pdf-parse` 和 `exceljs` 替代 Python 脚本
+- 统一技术栈，部署更简单
+- 详细步骤：[VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)
+
+### 快速部署步骤
+
+#### 1. 创建 Git 远程仓库
+
+在 GitHub 创建一个新仓库，获取仓库 URL：
+```
+https://github.com/YOUR_USERNAME/pdf-field-extractor.git
+```
+
+#### 2. 连接并推送代码
+
+```bash
+cd /workspace/projects
+git remote add origin https://github.com/YOUR_USERNAME/pdf-field-extractor.git
+git branch -M main
+git push -u origin main
+```
+
+#### 3. 在 Vercel 导入仓库
+
+1. 访问 https://vercel.com 并登录（推荐 GitHub 账号）
+2. 点击 **"Add New"** → **"Project"**
+3. 找到 `pdf-field-extractor` 仓库，点击 **"Import"**
+4. 点击 **"Deploy"** 开始部署
+
+#### 4. 配置环境变量
+
+在 Vercel 项目设置中添加：
+
+| 环境变量 | 值 |
+|---------|-----|
+| `COZE_API_KEY` | 从 Coze 平台获取 |
+| `COZE_BASE_URL` | `https://api.coze.com` |
+| `COZE_BOT_ID` | 从 Coze 平台获取 |
+
+#### 5. 重新部署
+
+配置环境变量后，在 **"Deployments"** 页面点击 **"Redeploy"**。
+
+#### 6. 访问应用
+
+部署成功后，访问：
+- **Production URL**: `https://pdf-field-extractor.vercel.app`
+
+### 自动部署
+
+配置完成后，每次推送代码到 `main` 分支，Vercel 会自动重新部署：
+
+```bash
+git add .
+git commit -m "update: 更新功能"
+git push
+```
+
+### 详细文档
+
+- 📖 [快速开始指南](./QUICKSTART.md) - 简化的部署步骤
+- 📘 [完整部署指南](./GIT_AND_VERCEL_DEPLOYMENT.md) - 详细的 Git 和 Vercel 配置
+- 📗 [Vercel 部署方案](./VERCEL_DEPLOYMENT.md) - Node.js vs Python 方案对比
+- 📙 [环境变量配置](./.env.example) - 环境变量示例
+
+## 技术栈
+
+- **框架**: Next.js 16 (App Router)
+- **UI**: React 19 + shadcn/ui
+- **语言**: TypeScript 5
+- **样式**: Tailwind CSS 4
+- **包管理器**: pnpm
+- **PDF 解析**: Python (PyMuPDF) *需要迁移到 Node.js*
+- **Excel 导出**: Python (openpyxl) *需要迁移到 Node.js*
+- **LLM**: doubao-seed-1-8-251228 (coze-coding-dev-sdk)
+
+## 相关链接
+
+- [Next.js 官方文档](https://nextjs.org/docs)
+- [shadcn/ui 组件库](https://ui.shadcn.com)
+- [Tailwind CSS 文档](https://tailwindcss.com)
+- [Vercel 部署文档](https://vercel.com/docs)
+
+## 许可证
+
+本项目由扣子编程 CLI 创建。
+```
+
+## 部署到 Vercel
+
 ### 快速部署
 
 1. **安装 Vercel CLI**
