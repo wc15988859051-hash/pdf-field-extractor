@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  pdf-field-extractor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pdf-field-extractor
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+    volumes:
+      # 持久化存储（可选）：如果需要保存处理后的文件
+      - ./data:/tmp
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.example.description=PDF Field Extractor Application"
+      - "com.example.service=pdf-field-extractor"
