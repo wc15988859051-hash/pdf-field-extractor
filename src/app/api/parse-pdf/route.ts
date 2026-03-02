@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
-
-const execAsync = promisify(exec);
+const pdf = require('pdf-parse');
+import ExcelJS from 'exceljs';
 
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
 // PDF 临时文件目录
 const PDF_TEMP_DIR = '/tmp/pdfs';
+
+// Excel 临时目录
+const EXCEL_TEMP_DIR = '/tmp/extracted';
 
 // 需要提取的字段列表
 const REQUIRED_FIELDS = [
@@ -29,16 +30,31 @@ const REQUIRED_FIELDS = [
   'Product Name'
 ];
 
-// 解析 PDF 并提取文本
+// 字段映射关系：原字段名 → 新字段名
+const FIELD_MAPPING: Record<string, string> = {
+  "Article": "color code",
+  "Order Reference": "PO",
+  "Colour Name": "color",
+  "GBP Retail Price": "sell",
+  "Collection": "style no",
+  "Design Number": "style code",
+  "Ex Port Date": "Ex-date",
+  "Total": "quantity",
+  "Unit Price": "unit price",
+  "Line Value": "total",
+  "Product Name": "style name"
+};
+
+// 解析 PDF 并提取文本（Node.js 版本）
 async function parsePDF(filePath: string): Promise<string> {
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/parse_pdf.py';
-  const { stdout, stderr } = await execAsync(`python3 ${scriptPath} "${filePath}"`);
-
-  if (stderr && !stdout) {
-    throw new Error(`PDF 解析失败: ${stderr}`);
+  try {
+    const dataBuffer = readFileSync(filePath);
+    const data = await pdf(dataBuffer);
+    return data.text;
+  } catch (error) {
+    console.error('PDF 解析错误:', error);
+    throw new Error(`PDF 解析失败: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  return stdout;
 }
 
 // 使用 LLM 提取字段
@@ -138,45 +154,261 @@ ${pdfText}`;
   }
 }
 
-// 导出 Excel（追加到全局 Excel 文件）
-async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
-  const excelDir = '/tmp/extracted';
-  const jsonDataPath = join(excelDir, `temp_${pdfFilename}_${Date.now()}.json`);
-  const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
+// 字段映射
+function mapFields(data: any[], pdfFilename?: string): any[] {
+  const mappedData = [];
+  for (const item of data) {
+    const mappedItem: any = {};
+    for (const [oldKey, value] of Object.entries(item)) {
+      const newKey = FIELD_MAPPING[oldKey] || oldKey;
+      mappedItem[newKey] = value;
+    }
+    if (pdfFilename) {
+      mappedItem["原PDF名称"] = pdfFilename;
+    }
+    mappedData.push(mappedItem);
+  }
+  return mappedData;
+}
 
-  // 确保目录存在
-  if (!existsSync(excelDir)) {
-    await mkdir(excelDir, { recursive: true });
-    console.log(`创建 Excel 导出目录: ${excelDir}`);
+// 格式化金额为美元格式
+function formatCurrency(value: string): string {
+  if (!value) return '';
+  
+  // 移除非数字字符，保留小数点
+  const numericPart = value.replace(/[^\d.]/g, '');
+  if (!numericPart) return `$${value}`;
+  
+  try {
+    const amountFloat = parseFloat(numericPart);
+    // 格式化为：$55,345.00
+    return `$${amountFloat.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  } catch {
+    return `$${value}`;
+  }
+}
+
+// 合并单元格
+function mergeCellsForGroup(worksheet: ExcelJS.Worksheet, startRow: number) {
+  // 序号（列 1）：合并 5 行
+  worksheet.mergeCells(`A${startRow}:A${startRow + 4}`);
+
+  // style no（列 3）：合并 5 行
+  worksheet.mergeCells(`C${startRow}:C${startRow + 4}`);
+
+  // style name（列 4）：合并 5 行
+  worksheet.mergeCells(`D${startRow}:D${startRow + 4}`);
+
+  // color（列 5）：合并 5 行
+  worksheet.mergeCells(`E${startRow}:E${startRow + 4}`);
+
+  // unit price（列 6）：前 3 行合并（行 1-3）
+  worksheet.mergeCells(`F${startRow}:F${startRow + 2}`);
+  // unit price（列 6）：后 2 行合并（行 4-5）
+  worksheet.mergeCells(`F${startRow + 3}:F${startRow + 4}`);
+
+  // quantity（列 7）：合并 5 行
+  worksheet.mergeCells(`G${startRow}:G${startRow + 4}`);
+
+  // amount（列 8）：合并 5 行
+  worksheet.mergeCells(`H${startRow}:H${startRow + 4}`);
+
+  // amount after discount（列 9）：合并 5 行
+  worksheet.mergeCells(`I${startRow}:I${startRow + 4}`);
+
+  // delivery（列 10）：合并前 2 行（行 1-2）
+  worksheet.mergeCells(`J${startRow}:J${startRow + 1}`);
+}
+
+// 填充数据到工作表
+async function fillDataToSheet(worksheet: ExcelJS.Worksheet, data: any[], startIdx: number = 0) {
+  for (let idx = 0; idx < data.length; idx++) {
+    const item = data[idx];
+    const startRow = 2 + ((startIdx + idx) * 6);
+    const seqNum = startIdx + idx + 1;
+
+    // 获取数据值
+    let po = String(item["PO"] || "");
+    const style_no = String(item["style no"] || "");
+    const style_name = String(item["style name"] || "");
+    const color = String(item["color"] || "");
+    const unit_price = String(item["unit price"] || "");
+    const quantity = String(item["quantity"] || "");
+    let total = String(item["total"] || "");
+    const ex_date = String(item["Ex-date"] || "");
+    let style_code = String(item["style code"] || "");
+    let color_code = String(item["color code"] || "");
+    let sell = String(item["sell"] || "");
+    const pdf_name = String(item["原PDF名称"] || "");
+
+    // 清理已存在的前缀（避免重复添加）
+    if (po.startsWith("PO#")) po = po.slice(3);
+    if (style_code.startsWith("style code#")) style_code = style_code.slice(11);
+    if (color_code.startsWith("color code#")) color_code = color_code.slice(11);
+    if (sell.startsWith("GBP")) sell = sell.slice(3);
+    if (total.startsWith("¥") || total.startsWith("$")) total = total.slice(1);
+
+    // 添加前缀（仅当值非空时）
+    if (po) po = `PO#${po}`;
+    if (style_code) style_code = `style code#${style_code}`;
+    if (color_code) color_code = `color code#${color_code}`;
+    if (sell) sell = `GBP${sell}`;
+    if (total) total = formatCurrency(total);
+
+    // 填充第 1 行
+    worksheet.getCell(`A${startRow}`).value = seqNum;
+    worksheet.getCell(`B${startRow}`).value = po;
+    worksheet.getCell(`C${startRow}`).value = style_no;
+    worksheet.getCell(`D${startRow}`).value = style_name;
+    worksheet.getCell(`E${startRow}`).value = color;
+    worksheet.getCell(`F${startRow}`).value = unit_price;
+    worksheet.getCell(`G${startRow}`).value = quantity;
+    worksheet.getCell(`H${startRow}`).value = total;
+    worksheet.getCell(`I${startRow}`).value = "";
+    worksheet.getCell(`J${startRow}`).value = ex_date;
+    worksheet.getCell(`K${startRow}`).value = pdf_name;
+
+    // 填充第 2 行（style code）
+    worksheet.getCell(`B${startRow + 1}`).value = style_code;
+
+    // 填充第 3 行（color code）
+    worksheet.getCell(`B${startRow + 2}`).value = color_code;
+
+    // 填充第 4 行（空行）
+    worksheet.getCell(`B${startRow + 3}`).value = "";
+
+    // 填充第 5 行（sell）
+    worksheet.getCell(`B${startRow + 4}`).value = sell;
+
+    // 合并单元格
+    mergeCellsForGroup(worksheet, startRow);
+  }
+}
+
+// 提取现有数据
+function extractExistingData(worksheet: ExcelJS.Worksheet): [number, any][] {
+  const existingData: [number, any][] = [];
+  let rowIdx = 2;
+
+  while (rowIdx <= worksheet.rowCount) {
+    const seqCell = worksheet.getCell(`A${rowIdx}`);
+    if (!seqCell.value || String(seqCell.value).trim() === "") break;
+
+    const item: any = {
+      "序号": seqCell.value,
+      "PO": worksheet.getCell(`B${rowIdx}`).value || "",
+      "style no": worksheet.getCell(`C${rowIdx}`).value || "",
+      "style name": worksheet.getCell(`D${rowIdx}`).value || "",
+      "color": worksheet.getCell(`E${rowIdx}`).value || "",
+      "unit price": worksheet.getCell(`F${rowIdx}`).value || "",
+      "quantity": worksheet.getCell(`G${rowIdx}`).value || "",
+      "total": worksheet.getCell(`H${rowIdx}`).value || "",
+      "Ex-date": worksheet.getCell(`J${rowIdx}`).value || "",
+      "原PDF名称": worksheet.getCell(`K${rowIdx}`).value || "",
+    };
+
+    item["style code"] = worksheet.getCell(`B${rowIdx + 1}`).value || "";
+    item["color code"] = worksheet.getCell(`B${rowIdx + 2}`).value || "";
+    item["sell"] = worksheet.getCell(`B${rowIdx + 4}`).value || "";
+
+    existingData.push([Number(item["序号"]), item]);
+    rowIdx += 6;
   }
 
-  // 确保 PDF 文件名在数据中
+  return existingData;
+}
+
+// 导出 Excel（Node.js 版本）
+async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
+  // 确保目录存在
+  if (!existsSync(EXCEL_TEMP_DIR)) {
+    await mkdir(EXCEL_TEMP_DIR, { recursive: true });
+    console.log(`创建 Excel 导出目录: ${EXCEL_TEMP_DIR}`);
+  }
+
+  const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
+  const outputPath = GLOBAL_EXCEL_PATH;
+
+  // 字段映射并添加文件名
   const dataWithFilename = data.map(item => ({
     ...item,
     "原PDF名称": pdfFilename
   }));
 
-  // 写入临时 JSON 文件
-  await writeFile(jsonDataPath, JSON.stringify(dataWithFilename, null, 2), 'utf-8');
+  const mappedData = mapFields(dataWithFilename, pdfFilename);
 
-  // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/export_to_excel.py';
-  const { stdout, stderr } = await execAsync(
-    `python3 ${scriptPath} "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
-  );
+  let workbook: ExcelJS.Workbook;
+  let worksheet: ExcelJS.Worksheet;
 
-  if (stderr && !stdout) {
-    throw new Error(`Excel 导出失败: ${stderr}`);
+  // 检查 Excel 文件是否存在
+  if (existsSync(outputPath)) {
+    console.log(`Excel 文件已存在，执行增量更新: ${outputPath}`);
+    workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(outputPath);
+    worksheet = workbook.getWorksheet(1) || workbook.addWorksheet('Sheet1');
+
+    // 提取现有数据
+    const existingData = extractExistingData(worksheet);
+    console.log(`现有数据: ${existingData.length} 组`);
+
+    // 获取新数据的 PDF 文件名集合
+    const newPdfNames = new Set(mappedData.map(item => item["原PDF名称"] || ""));
+
+    // 过滤掉与新数据 PDF 文件名相同的旧数据
+    const filteredData = existingData
+      .filter(([_, item]) => !newPdfNames.has(item["原PDF名称"] || ""))
+      .map(([_, item]) => item);
+
+    const removedCount = existingData.length - filteredData.length;
+    if (removedCount > 0) {
+      console.log(`删除了 ${removedCount} 组重复数据`);
+    }
+
+    // 合并数据
+    const mergedData = [...filteredData, ...mappedData];
+
+    // 清空工作表数据（保留表头）
+    while (worksheet.rowCount > 1) {
+      worksheet.spliceRows(2, 1);
+    }
+
+    // 重新填充所有数据
+    await fillDataToSheet(worksheet, mergedData);
+    console.log(`Excel 文件已成功更新: ${outputPath}`);
+    console.log(`当前共有 ${mergedData.length} 组数据`);
+  } else {
+    console.log(`Excel 文件不存在，基于模板创建: ${outputPath}`);
+    workbook = new ExcelJS.Workbook();
+    
+    if (existsSync(templatePath)) {
+      await workbook.xlsx.readFile(templatePath);
+      worksheet = workbook.getWorksheet(1) || workbook.addWorksheet('Sheet1');
+      
+      // 清空模板中的示例数据
+      while (worksheet.rowCount > 1) {
+        worksheet.spliceRows(2, 1);
+      }
+    } else {
+      worksheet = workbook.addWorksheet('Sheet1');
+      // 创建简单表头
+      const headers = ['序号', 'PO', 'style no', 'style name', 'color', 'unit price', 'quantity', 'total', '', 'Ex-date', '原PDF名称'];
+      headers.forEach((header, idx) => {
+        worksheet.getCell(String.fromCharCode(65 + idx) + '1').value = header;
+      });
+    }
+
+    // 填充数据
+    await fillDataToSheet(worksheet, mappedData);
+    console.log(`Excel 文件已成功导出到: ${outputPath}`);
+    console.log(`共填充 ${mappedData.length} 组数据`);
   }
 
-  // 清理临时 JSON 文件
-  try {
-    await unlink(jsonDataPath);
-  } catch (error) {
-    console.error('清理临时 JSON 文件失败:', error);
-  }
-
-  return GLOBAL_EXCEL_PATH;
+  // 保存 Excel 文件
+  await workbook.xlsx.writeFile(outputPath);
+  return outputPath;
 }
 
 export async function POST(request: NextRequest) {
@@ -210,13 +442,13 @@ export async function POST(request: NextRequest) {
     await writeFile(pdfPath, buffer);
     console.log(`文件已保存到: ${pdfPath}`);
 
-    // 步骤 1: 解析 PDF
+    // 步骤 1: 解析 PDF（Node.js 版本）
     const pdfText = await parsePDF(pdfPath);
 
     // 步骤 2: 提取字段（使用 LLM）
     const extractedFields = await extractFieldsWithLLM(pdfText);
 
-    // 步骤 3: 导出 Excel（追加到全局 Excel 文件）
+    // 步骤 3: 导出 Excel（Node.js 版本）
     await exportToExcel([extractedFields], filename);
 
     // 清理临时 PDF 文件
