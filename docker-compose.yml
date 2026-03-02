@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  pdf-extractor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pdf-extractor
+    ports:
+      - "5000:5000"
+    volumes:
+      # 挂载临时目录
+      - /tmp/pdfs:/tmp/pdfs
+      - /tmp/extracted:/tmp/extracted
+      # 挂载日志目录
+      - ./logs:/app/logs
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # 资源限制（根据 NAS 性力调整）
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
