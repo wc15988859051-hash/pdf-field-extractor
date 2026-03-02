@@ -3,28 +3,74 @@
 ## 📦 部署包位置
 
 ```
-/workspace/projects/nas-deploy-package/
+/workspace/projects/pdf-extractor-complete-deploy-package.tar.gz
 ```
+
+**文件大小**：约 532KB
 
 ## 📂 包含的文件
 
-1. **pdf-extractor-nas.tar.gz** (528KB)
-   - 完整的应用程序代码
-   - 所有必需的配置文件
-   - Python 脚本和依赖
+### 主程序包
+- **pdf-extractor-nas.tar.gz** (526KB)
+  - 完整的应用程序代码
+  - Dockerfile 和 docker-compose.yml
+  - Python 脚本和配置文件
 
-2. **NAS-DEPLOYMENT-GUIDE.md**
-   - 完整的 NAS 部署指南
-   - SSH 命令行部署步骤
-   - 故障排查和维护指南
+### 部署文档
+1. **README.md**（本文件）
+   - 总览和快速开始
 
-3. **QUICK-START.md**
-   - 3 步快速部署指南
-   - 适合有经验的用户
+2. **QUICK-GUI-GUIDE.md** ⭐ **如果你只能用图形界面，请看这个！**
+   - 6 步完成部署（超简化流程图）
+   - 每步都有操作指引
+   - 快速故障排查
 
-4. **GUI-DEPLOYMENT-GUIDE.md**
-   - 图形界面部署指南
-   - 适合无 SSH 访问权限的用户
+3. **GUI-DETAILED-GUIDE.md**
+   - 图形界面详细部署指南
+   - 完整的步骤说明
+   - 配置域名和 SSL
+
+4. **QUICK-START.md**
+   - SSH 命令行快速部署（3 步）
+   - 需要访问权限
+
+5. **NAS-DEPLOYMENT-GUIDE.md**
+   - 完整的 NAS 部署指南（SSH）
+   - 域名和 SSL 配置
+   - 监控和维护指南
+
+---
+
+## 🎯 选择适合你的部署方式
+
+### 情况 1：你只能用图形界面（推荐看这个！）
+
+**如果你**：
+- NAS 不支持 SSH
+- 习惯使用图形界面
+- 不熟悉命令行
+
+**请阅读**：**QUICK-GUI-GUIDE.md**（6 步完成部署）
+
+**特点**：
+- ✅ 纯图形化操作
+- ✅ 步骤简单清晰
+- ✅ 有流程图说明
+
+---
+
+### 情况 2：你可以使用 SSH
+
+**如果你**：
+- NAS 支持 SSH
+- 熟悉命令行操作
+
+**请阅读**：QUICK-START.md（3 步快速部署）
+
+**特点**：
+- ✅ 最快速的方式
+- ✅ 自动配置
+- ✅ 易于维护
 
 ---
 
