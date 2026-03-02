@@ -6,10 +6,14 @@ import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 const pdf = require('pdf-parse');
 import ExcelJS from 'exceljs';
 
+// 确保使用 Node.js runtime（Vercel 兼容性）
+export const runtime = 'nodejs';
+export const maxDuration = 60; // 延长超时时间到 60 秒
+
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
-// PDF 临时文件目录
+// PDF 临时文件目录 - Vercel 中 /tmp 是唯一可写目录
 const PDF_TEMP_DIR = '/tmp/pdfs';
 
 // Excel 临时目录
@@ -412,22 +416,37 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
 }
 
 export async function POST(request: NextRequest) {
+  console.log('=== 收到 PDF 解析请求 ===');
+  console.log('环境:', process.env.NODE_ENV);
+  console.log('Runtime:', runtime);
+
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
     if (!file) {
+      console.log('错误: 未找到文件');
       return NextResponse.json({ error: '未找到文件' }, { status: 400 });
     }
 
+    console.log('收到文件:', file.name, '大小:', file.size, '类型:', file.type);
+
     if (file.type !== 'application/pdf') {
+      console.log('错误: 文件类型不正确', file.type);
       return NextResponse.json({ error: '只支持 PDF 文件' }, { status: 400 });
+    }
+
+    // 检查文件大小（Vercel 限制约 4.5MB）
+    if (file.size > 4 * 1024 * 1024) {
+      console.log('错误: 文件过大', file.size);
+      return NextResponse.json({ error: '文件大小不能超过 4MB' }, { status: 400 });
     }
 
     // 提取并转发请求头
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
 
     // 保存上传的文件到临时目录
+    console.log('开始保存文件...');
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const filename = file.name;

@@ -3,6 +3,9 @@ import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
+// 确保使用 Node.js runtime（Vercel 兼容性）
+export const runtime = 'nodejs';
+
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
