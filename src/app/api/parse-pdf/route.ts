@@ -1,18 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { fileURLToPath } from 'url';
 
 const execAsync = promisify(exec);
+
+// 获取当前文件的目录
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// 获取项目根目录
+const PROJECT_ROOT = process.cwd();
 
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
 // PDF 临时文件目录
 const PDF_TEMP_DIR = '/tmp/pdfs';
+
+// Python 脚本路径（使用相对路径，兼容部署环境）
+const PARSE_PYTHON_SCRIPT = join(PROJECT_ROOT, 'src/app/api/parse-pdf/scripts/parse_pdf.py');
+const EXPORT_PYTHON_SCRIPT = join(PROJECT_ROOT, 'src/app/api/parse-pdf/scripts/export_to_excel.py');
+const EXCEL_TEMPLATE_PATH = join(PROJECT_ROOT, 'src/app/api/parse-pdf/assets/template.xlsx');
+
+console.log('项目根目录:', PROJECT_ROOT);
+console.log('Python 解析脚本路径:', PARSE_PYTHON_SCRIPT);
+console.log('Python 导出脚本路径:', EXPORT_PYTHON_SCRIPT);
+console.log('Excel 模板路径:', EXCEL_TEMPLATE_PATH);
 
 // 需要提取的字段列表
 const REQUIRED_FIELDS = [
@@ -31,8 +49,7 @@ const REQUIRED_FIELDS = [
 
 // 解析 PDF 并提取文本
 async function parsePDF(filePath: string): Promise<string> {
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/parse_pdf.py';
-  const { stdout, stderr } = await execAsync(`python3 ${scriptPath} "${filePath}"`);
+  const { stdout, stderr } = await execAsync(`python3 "${PARSE_PYTHON_SCRIPT}" "${filePath}"`);
 
   if (stderr && !stdout) {
     throw new Error(`PDF 解析失败: ${stderr}`);
@@ -160,9 +177,8 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
   await writeFile(jsonDataPath, JSON.stringify(dataWithFilename, null, 2), 'utf-8');
 
   // 调用导出脚本（使用增量更新，所有数据合并到全局 Excel）
-  const scriptPath = '/workspace/projects/projects/pdf-field-extractor/scripts/export_to_excel.py';
   const { stdout, stderr } = await execAsync(
-    `python3 ${scriptPath} "${jsonDataPath}" "${templatePath}" "${GLOBAL_EXCEL_PATH}"`
+    `python3 "${EXPORT_PYTHON_SCRIPT}" "${jsonDataPath}" "${EXCEL_TEMPLATE_PATH}" "${GLOBAL_EXCEL_PATH}"`
   );
 
   if (stderr && !stdout) {
