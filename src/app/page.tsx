@@ -120,10 +120,30 @@ export default function PDFExtractorPage() {
         body: formData,
       });
 
-      const result = await response.json();
-
+      // 先检查响应状态
       if (!response.ok) {
-        throw new Error(result.error || '解析失败');
+        let errorMsg = `HTTP ${response.status}`;
+        try {
+          const errorResult = await response.json();
+          errorMsg = errorResult.error || errorMsg;
+        } catch {
+          try {
+            const text = await response.text();
+            errorMsg = text || errorMsg;
+          } catch {
+            // ignore
+          }
+        }
+        throw new Error(errorMsg);
+      }
+
+      // 尝试解析 JSON
+      let result;
+      try {
+        result = await response.json();
+      } catch (jsonError) {
+        console.error('JSON 解析失败:', jsonError);
+        throw new Error('服务器返回了无效的响应格式');
       }
 
       // 转换字段数据为提取字段格式

@@ -458,17 +458,24 @@ export async function POST(request: NextRequest) {
       console.error('清理临时文件失败:', error);
     }
 
-    return NextResponse.json({
+    // 构建响应数据
+    const responseData = {
       success: true,
       filename: filename,
       fields: extractedFields,
       message: 'PDF 解析成功，字段已提取并追加到全局 Excel 文件'
-    });
+    };
+
+    console.log('返回响应:', JSON.stringify(responseData, null, 2).substring(0, 500));
+
+    return NextResponse.json(responseData);
 
   } catch (error) {
     console.error('PDF 解析错误:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.log('返回错误响应:', { error: 'PDF 解析失败: ' + errorMessage });
     return NextResponse.json(
-      { error: 'PDF 解析失败: ' + (error instanceof Error ? error.message : String(error)) },
+      { error: 'PDF 解析失败: ' + errorMessage },
       { status: 500 }
     );
   }
