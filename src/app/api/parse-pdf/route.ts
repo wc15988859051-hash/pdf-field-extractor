@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, unlink, readFile } from 'fs/promises';
+import { writeFile, unlink, readFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { exec } from 'child_process';
@@ -10,6 +10,9 @@ const execAsync = promisify(exec);
 
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
+
+// PDF 临时文件目录
+const PDF_TEMP_DIR = '/tmp/pdfs';
 
 // 需要提取的字段列表
 const REQUIRED_FIELDS = [
@@ -137,8 +140,15 @@ ${pdfText}`;
 
 // 导出 Excel（追加到全局 Excel 文件）
 async function exportToExcel(data: any[], pdfFilename: string): Promise<string> {
-  const jsonDataPath = join('/tmp/extracted', `temp_${pdfFilename}_${Date.now()}.json`);
+  const excelDir = '/tmp/extracted';
+  const jsonDataPath = join(excelDir, `temp_${pdfFilename}_${Date.now()}.json`);
   const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
+
+  // 确保目录存在
+  if (!existsSync(excelDir)) {
+    await mkdir(excelDir, { recursive: true });
+    console.log(`创建 Excel 导出目录: ${excelDir}`);
+  }
 
   // 确保 PDF 文件名在数据中
   const dataWithFilename = data.map(item => ({
@@ -189,9 +199,16 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const filename = file.name;
-    const pdfPath = join('/tmp/pdfs', filename);
+    const pdfPath = join(PDF_TEMP_DIR, filename);
+
+    // 确保临时目录存在
+    if (!existsSync(PDF_TEMP_DIR)) {
+      await mkdir(PDF_TEMP_DIR, { recursive: true });
+      console.log(`创建临时目录: ${PDF_TEMP_DIR}`);
+    }
 
     await writeFile(pdfPath, buffer);
+    console.log(`文件已保存到: ${pdfPath}`);
 
     // 步骤 1: 解析 PDF
     const pdfText = await parsePDF(pdfPath);
