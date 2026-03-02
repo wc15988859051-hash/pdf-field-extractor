@@ -329,7 +329,7 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
     console.log(`创建 Excel 导出目录: ${EXCEL_TEMP_DIR}`);
   }
 
-  const templatePath = '/workspace/projects/projects/pdf-field-extractor/assets/template.xlsx';
+  const templatePath = join(process.cwd(), 'projects/pdf-field-extractor/assets/template.xlsx');
   const outputPath = GLOBAL_EXCEL_PATH;
 
   // 字段映射并添加文件名
