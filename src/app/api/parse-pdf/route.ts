@@ -6,10 +6,6 @@ import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 const pdf = require('pdf-parse');
 import ExcelJS from 'exceljs';
 
-// 确保使用 Node.js runtime（Vercel 兼容性）
-export const runtime = 'nodejs';
-export const maxDuration = 60; // 延长超时时间到 60 秒
-
 // 全局 Excel 文件路径
 const GLOBAL_EXCEL_PATH = '/tmp/extracted/all_data.xlsx';
 
@@ -418,7 +414,6 @@ async function exportToExcel(data: any[], pdfFilename: string): Promise<string> 
 export async function POST(request: NextRequest) {
   console.log('=== 收到 PDF 解析请求 ===');
   console.log('环境:', process.env.NODE_ENV);
-  console.log('Runtime:', runtime);
 
   try {
     const formData = await request.formData();
