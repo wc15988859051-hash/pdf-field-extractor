@@ -1,5 +1,4 @@
 {
   "regions": ["hkg1"],
-  "framework": "nextjs",
-  "buildCommand": "npx next build"
+  "framework": "nextjs"
 }
